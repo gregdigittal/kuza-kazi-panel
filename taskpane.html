@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Kuza Kazi — Control Panel</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+  :root{
+    --slate:#172029; --slate2:#1f2b36; --line:#2c3a47;
+    --paper:#f5f7f9; --card:#ffffff; --ink:#1b2733; --mut:#5b6b7a;
+    --teal:#0e9f8e; --teal-d:#0b7d70; --amber:#c98a16; --red:#c0392b;
+    --pos:#0e9f8e; --neg:#c0392b;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Roboto Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:var(--sans);background:var(--paper);color:var(--ink);font-size:13px;line-height:1.35}
+  .wrap{max-width:760px;margin:0 auto}
+
+  /* ---- header / readout (the signature) ---- */
+  header{background:var(--slate);color:#e7edf2;padding:12px 14px 14px}
+  .ttl{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .ttl h1{font-size:13px;font-weight:600;letter-spacing:.02em;margin:0}
+  .pill{font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:999px;background:#2a3a47;color:#9fb3c2;white-space:nowrap}
+  .pill.work{background:#3a2f12;color:#f0c869}
+  .pill.ok{background:#0c3b35;color:#46d6c2}
+  .pill.err{background:#3d1c17;color:#f08a7d}
+  .readout{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+  .scn{background:var(--slate2);border:1px solid var(--line);border-radius:7px;padding:8px 9px}
+  .scn .nm{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:#7f93a3}
+  .scn .big{font-family:var(--mono);font-size:16px;font-weight:600;color:#f1f5f9;margin-top:3px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .scn .sub{font-family:var(--mono);font-size:10.5px;color:#9fb3c2;margin-top:1px;font-variant-numeric:tabular-nums}
+  .scn .sub b{font-weight:600}
+  .scn .sub.net b{color:#5fe0cf}
+  .rdlabel{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:#6f8395;margin-top:11px}
+  .toolbar{display:flex;gap:7px;margin-top:11px}
+  .toolbar button{flex:1;font-family:var(--sans);font-size:11.5px;font-weight:500;padding:7px 8px;border-radius:6px;cursor:pointer;border:1px solid #33424f;background:#26333f;color:#d6e0e8}
+  .toolbar button:hover{background:#2f3e4b}
+  .toolbar button.warn{border-color:#5a3a3a;background:#3a2626;color:#e9b7af}
+  .toolbar button.warn:hover{background:#472d2d}
+
+  /* ---- sections ---- */
+  .sect{border-bottom:1px solid #e4e9ee;background:var(--paper)}
+  .shead{display:flex;align-items:center;gap:8px;padding:11px 14px;cursor:pointer;user-select:none}
+  .shead:hover{background:#eef2f5}
+  .chev{font-size:10px;color:var(--mut);width:10px;transition:transform .12s}
+  .sect.collapsed .chev{transform:rotate(-90deg)}
+  .seyebrow{font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--ink)}
+  .scount{font-family:var(--mono);font-size:10px;color:var(--mut);margin-left:auto}
+  .sbody{padding:4px 14px 12px}
+  .sect.collapsed .sbody{display:none}
+  .snote{font-size:11px;color:var(--mut);margin:2px 0 9px;line-height:1.4}
+
+  /* ---- control rows ---- */
+  .ctl{padding:7px 0;border-top:1px solid #edf1f4}
+  .ctl:first-child{border-top:0}
+  .clab{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .clab .nm{font-size:12px;color:var(--ink)}
+  .clab .val{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--teal-d);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .clab .val.dim{color:var(--mut);font-weight:500}
+  .row2{display:flex;align-items:center;gap:9px}
+  input[type=range]{flex:1;height:4px;-webkit-appearance:none;appearance:none;background:#d3dde4;border-radius:3px;outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:var(--teal);border:2px solid #fff;box-shadow:0 0 0 1px #bcd;cursor:pointer}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--teal);border:2px solid #fff;cursor:pointer}
+  input[type=number]{width:74px;font-family:var(--mono);font-size:12px;text-align:right;padding:4px 6px;border:1px solid #cdd8e0;border-radius:5px;color:var(--ink);background:#fff;font-variant-numeric:tabular-nums}
+  input[type=number]:focus{outline:2px solid #bfe7e1;border-color:var(--teal)}
+  select{font-family:var(--sans);font-size:12px;padding:4px 6px;border:1px solid #cdd8e0;border-radius:5px;background:#fff;color:var(--ink)}
+
+  /* shape row */
+  .shape-grid{display:grid;grid-template-columns:1fr auto;gap:7px 9px;align-items:center}
+  .shape-sub{display:none;padding-top:6px;margin-top:6px;border-top:1px dashed #e1e7ec}
+  .shape-sub.on{display:block}
+  .mini{display:flex;align-items:center;gap:8px;margin-top:6px}
+  .mini .ml{font-size:11px;color:var(--mut);width:62px}
+  .mini input[type=range]{flex:1}
+  .mini .mv{font-family:var(--mono);font-size:11px;color:var(--teal-d);width:48px;text-align:right;font-variant-numeric:tabular-nums}
+
+  .region-tag{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:#8595a3;margin:11px 0 3px;padding-bottom:3px;border-bottom:1px solid #e4e9ee}
+  .region-tag:first-child{margin-top:2px}
+
+  footer{padding:12px 14px 18px;color:var(--mut);font-size:11px;line-height:1.5}
+  .err-banner{display:none;margin:10px 14px;padding:10px 12px;background:#fdecea;border:1px solid #f5c6c0;border-radius:6px;color:#922;font-size:12px}
+  .err-banner.on{display:block}
+
+  /* calibration grid */
+  .scn-toggle{display:flex;gap:5px;margin:2px 0 10px}
+  .scn-toggle button{flex:1;font-family:var(--sans);font-size:11px;font-weight:500;padding:6px 4px;border:1px solid #cdd8e0;border-radius:6px;background:#fff;color:var(--mut);cursor:pointer}
+  .scn-toggle button.on{background:var(--slate);border-color:var(--slate);color:#e7edf2;font-weight:600}
+  .cal-stream{margin-top:11px;padding-top:8px;border-top:1px solid #e4e9ee}
+  .cal-stream:first-child{margin-top:2px;border-top:0}
+  .cal-name{font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px}
+  .cal-line{display:grid;grid-template-columns:62px repeat(5,1fr);gap:5px;align-items:center;margin-bottom:5px}
+  .cal-line .dl{font-size:11px;color:var(--mut)}
+  .cal-line input{width:100%;font-family:var(--mono);font-size:11px;text-align:right;padding:3px 5px;border:1px solid #cdd8e0;border-radius:4px;background:#fff;color:var(--ink);font-variant-numeric:tabular-nums}
+  .cal-line input:focus{outline:2px solid #bfe7e1;border-color:var(--teal)}
+  .cal-head{display:grid;grid-template-columns:62px repeat(5,1fr);gap:5px;margin-bottom:4px}
+  .cal-head span{font-family:var(--mono);font-size:9.5px;color:#8595a3;text-align:right}
+  .cal-head span:first-child{text-align:left}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="ttl">
+      <h1>Kuza Kazi · Control Panel</h1>
+      <span id="pill" class="pill">connecting…</span>
+    </div>
+    <div class="rdlabel">5-year totals · group · USD</div>
+    <div class="readout" id="readout">
+      <!-- filled by JS -->
+    </div>
+    <div class="toolbar">
+      <button id="btnRead">Read from Excel</button>
+      <button id="btnReset" class="warn">Reset to defaults</button>
+    </div>
+  </header>
+
+  <div id="errBanner" class="err-banner"></div>
+  <div id="sections"><!-- filled by JS --></div>
+
+  <footer>
+    Sliders update the panel live; the workbook updates when you release a slider or leave a box, then recalculates.
+    Edits write to the <b>Control Panel</b> sheet. <b>Read from Excel</b> re-pulls the workbook's current values.
+  </footer>
+</div>
+
+<script>
+/* ============================================================
+   CONTROL MAP  — every input cell on the Control Panel
+   ============================================================ */
+const MACRO_OPTS = ["Granular","Linear","S-curve","Exponential","Diminishing"];
+const EXP_OPTS   = ["Flat","Linear","S-curve","Exponential","Diminishing"];
+const CURV = {min:0.2, max:4, step:0.1, d:1.5};           // curvature, validation floor 0.2
+
+// expense categories in row order
+const EXP_CATS = ["Field operations","Channel & JV marketing","Division head salary",
+                  "Call centre staff","SMS / USSD","Support tooling","Rail / processing","SCF cost-of-funds"];
+const EXP_BASE = {KE:65, ZA:74, MZ:83};                   // row of first category per region
+
+function expenseControls(){
+  const out=[];
+  for(const reg of ["KE","ZA","MZ"]){
+    out.push({type:"region", label:reg});
+    EXP_CATS.forEach((cat,i)=>{
+      const r = EXP_BASE[reg]+i;
+      out.push({type:"shape", label:cat,
+        shape:{a:`B${r}`, opts:EXP_OPTS},
+        curv:{a:`D${r}`},
+        level:{a:`E${r}`, k:"mult", min:0.5, max:1.5, step:0.05, d:1},
+        end:{a:`F${r}`, min:0.5, max:2, step:0.05, d:1}});
+    });
+  }
+  return out;
+}
+
+function revenueLevelControls(){
+  const rows=[["Transactions / day",50],["Avg transaction value",51],["Take / fee",52]];
+  const cols={KE:"B",ZA:"C",MZ:"D"};
+  const out=[];
+  for(const [lab,r] of rows){
+    for(const reg of ["KE","ZA","MZ"]){
+      out.push({type:"slider", a:`${cols[reg]}${r}`, label:`${lab} — ${reg}`,
+                k:"mult", min:0.5, max:1.5, step:0.05, d:1});
+    }
+  }
+  return out;
+}
+
+const SECTIONS = [
+  { id:"levers", title:"Quick sensitivity levers", open:true,
+    note:"Flex the whole model at once.",
+    items:[
+      {type:"slider", a:"B7",  label:"Merchant penetration", k:"mult", min:0.5, max:1.5, step:0.05, d:1},
+      {type:"slider", a:"B8",  label:"Take-rate",            k:"mult", min:0.5, max:1.5, step:0.05, d:1},
+      {type:"slider", a:"B9",  label:"Digital-share shift",  k:"pp",   min:-0.20, max:0.30, step:0.01, d:0},
+      {type:"slider", a:"B10", label:"Onboarding productivity", k:"num", unit:"/agent/mo", min:50, max:250, step:5, d:120},
+    ]},
+  { id:"costfund", title:"Cost & funding rates", open:false,
+    note:"Per-merchant and per-transaction cost drivers.",
+    items:[
+      {type:"slider", a:"B13", label:"Division-head hire threshold", k:"usd",  min:0, max:5000000, step:250000, d:2000000},
+      {type:"slider", a:"B14", label:"SMS / USSD", k:"usd4", unit:"/merch/mo", min:0, max:0.5, step:0.001, d:0.128},
+      {type:"slider", a:"B15", label:"Support tooling", k:"usd4", unit:"/merch/mo", min:0, max:0.2, step:0.001, d:0.024},
+      {type:"slider", a:"B16", label:"Rail / processing", k:"usd4", unit:"/txn", min:0, max:0.10, step:0.005, d:0},
+      {type:"slider", a:"B17", label:"SCF cost-of-funds", k:"frac", min:0, max:0.10, step:0.005, d:0},
+    ]},
+  { id:"jv", title:"JV economics", open:false,
+    note:"MNO / Bank carve-out.",
+    items:[
+      {type:"slider", a:"B20", label:"JV merchant share", k:"frac", min:0, max:1, step:0.01, d:0.25},
+      {type:"slider", a:"B21", label:"NewCo equity share of JV", k:"frac", min:0, max:1, step:0.01, d:0.5},
+      {type:"slider", a:"B22", label:"JV marketing (% of JV rev)", k:"frac", min:0, max:0.3, step:0.01, d:0.05},
+    ]},
+  { id:"oper", title:"Operating ratios", open:false, note:"",
+    items:[
+      {type:"slider", a:"B25", label:"Call-centre agents / supervisor", k:"int", min:1, max:20, step:1, d:8},
+      {type:"slider", a:"B26", label:"S-curve back-loading exponent (k)", k:"num", min:0.5, max:3, step:0.1, d:1.4},
+    ]},
+  { id:"macro", title:"Macro shift & shape — by region", open:false,
+    note:"Pick a curve shape and shift the level for each region; drives every stream inside the region.",
+    items:[
+      {type:"region", label:"KE"},
+      {type:"shape", label:"Merchants",     shape:{a:"B39",opts:MACRO_OPTS}, curv:{a:"D39"}, level:{a:"E39",k:"mult",min:0.5,max:1.5,step:0.05,d:1}},
+      {type:"shape", label:"Digital share", shape:{a:"B40",opts:MACRO_OPTS}, curv:{a:"D40"}, level:{a:"E40",k:"pp",min:-0.20,max:0.30,step:0.01,d:0}},
+      {type:"region", label:"ZA"},
+      {type:"shape", label:"Merchants",     shape:{a:"B42",opts:MACRO_OPTS}, curv:{a:"D42"}, level:{a:"E42",k:"mult",min:0.5,max:1.5,step:0.05,d:1}},
+      {type:"shape", label:"Digital share", shape:{a:"B43",opts:MACRO_OPTS}, curv:{a:"D43"}, level:{a:"E43",k:"pp",min:-0.20,max:0.30,step:0.01,d:0}},
+      {type:"region", label:"MZ"},
+      {type:"shape", label:"Merchants",     shape:{a:"B45",opts:MACRO_OPTS}, curv:{a:"D45"}, level:{a:"E45",k:"mult",min:0.5,max:1.5,step:0.05,d:1}},
+      {type:"shape", label:"Digital share", shape:{a:"B46",opts:MACRO_OPTS}, curv:{a:"D46"}, level:{a:"E46",k:"pp",min:-0.20,max:0.30,step:0.01,d:0}},
+    ]},
+  { id:"revlvl", title:"Revenue level — × by region", open:false,
+    note:"Flat multipliers on the core revenue drivers.",
+    items: revenueLevelControls() },
+  { id:"eco", title:"Ecosystem / SCF volume — shape & level", open:false,
+    note:"Lending, marketplace, insurance and SCF volumes; each line keeps its own Y1/Y5 endpoints.",
+    items:[
+      {type:"shape", label:"KE — ecosystem volume", shape:{a:"B57",opts:MACRO_OPTS}, curv:{a:"D57"}, level:{a:"E57",k:"mult",min:0.5,max:1.5,step:0.05,d:1}},
+      {type:"shape", label:"ZA — ecosystem volume", shape:{a:"B58",opts:MACRO_OPTS}, curv:{a:"D58"}, level:{a:"E58",k:"mult",min:0.5,max:1.5,step:0.05,d:1}},
+      {type:"shape", label:"MZ — ecosystem volume", shape:{a:"B59",opts:MACRO_OPTS}, curv:{a:"D59"}, level:{a:"E59",k:"mult",min:0.5,max:1.5,step:0.05,d:1}},
+    ]},
+  { id:"exp", title:"Expenses — shape & level by category", open:false,
+    note:"Level scales the category; End-mult + shape trend it over Y1→Y5 (e.g. unit-cost decline). Flat = level only.",
+    items: expenseControls() },
+];
+
+/* ----- Granular per-stream trajectories (rows 96–130), driven via the Calibration grid ----- */
+const STREAMS = [
+  {name:"KE Generic",  merch:{P:97, C:98, O:99},  dig:{P:100,C:101,O:102}},
+  {name:"ZA Generic",  merch:{P:104,C:105,O:106}, dig:{P:107,C:108,O:109}},
+  {name:"ZA Building", merch:{P:111,C:112,O:113}, dig:{P:114,C:115,O:116}},
+  {name:"MZ Generic",  merch:{P:118,C:119,O:120}, dig:{P:121,C:122,O:123}},
+  {name:"MZ FMCG",     merch:{P:125,C:126,O:127}, dig:{P:128,C:129,O:130}},
+];
+const YEAR_COLS = ["B","C","D","E","F"]; // Y1..Y5
+let calScn = "C"; // active scenario for the Calibration grid: P / C / O
+
+/* ============================================================
+   FORMAT HELPERS
+   ============================================================ */
+function fmtMoney0(v){ // full USD, no decimals
+  if(v==null||isNaN(v)) return "—";
+  return "$"+Math.round(v).toLocaleString("en-US");
+}
+function fmtM(v){ // $ millions, 1dp
+  if(v==null||isNaN(v)) return "—";
+  return "$"+(v/1e6).toLocaleString("en-US",{minimumFractionDigits:1,maximumFractionDigits:1})+"M";
+}
+function ctlValStr(k,v){
+  switch(k){
+    case "mult":  return "×"+v.toFixed(2);
+    case "pp":    return (v>=0?"+":"")+(v*100).toFixed(0)+" pp";
+    case "frac":  return (v*100).toFixed(v*100%1?1:0)+"%";
+    case "usd":   return "$"+Math.round(v).toLocaleString("en-US");
+    case "usd4":  return "$"+v.toFixed(3);
+    case "int":   return String(Math.round(v));
+    case "num":   return (Math.round(v*100)/100).toString();
+    default:      return String(v);
+  }
+}
+
+/* ============================================================
+   STATE + RENDER
+   ============================================================ */
+const S = {};            // addr -> current value
+const els = {};          // addr -> {slider, num, valSpan} or {select, ...}
+let ready = false;
+
+function pill(text, cls){ const p=document.getElementById("pill"); p.textContent=text; p.className="pill"+(cls?" "+cls:""); }
+
+function buildReadout(){
+  const r=document.getElementById("readout");
+  const scn=[["Pessimistic","p"],["Conservative","c"],["Optimistic","o"]];
+  r.innerHTML = scn.map(([nm,id])=>`
+    <div class="scn">
+      <div class="nm">${nm}</div>
+      <div class="big" id="rev_${id}">—</div>
+      <div class="sub net">net <b id="net_${id}">—</b></div>
+    </div>`).join("");
+}
+
+function sliderRow(it){
+  const v = it.d, vs = ctlValStr(it.k, v);
+  const unit = it.unit?`<span style="color:var(--mut);font-weight:500"> ${it.unit}</span>`:"";
+  const d = document.createElement("div"); d.className="ctl";
+  d.innerHTML = `
+    <div class="clab"><span class="nm">${it.label}</span><span class="val" data-val="${it.a}">${vs}${unit}</span></div>
+    <div class="row2">
+      <input type="range" data-slider="${it.a}" min="${it.min}" max="${it.max}" step="${it.step}" value="${v}">
+      <input type="number" data-num="${it.a}" min="${it.min}" max="${it.max}" step="${it.step}" value="${numShow(it.k,v)}">
+    </div>`;
+  return d;
+}
+function numShow(k,v){ // value shown inside the number box (raw model value)
+  if(k==="usd"||k==="int") return Math.round(v);
+  if(k==="usd4") return v.toFixed(3);
+  return v;
+}
+
+function shapeRow(it){
+  const d=document.createElement("div"); d.className="ctl";
+  const opts = it.shape.opts.map(o=>`<option>${o}</option>`).join("");
+  const lk = it.level.k;
+  d.innerHTML = `
+    <div class="shape-grid">
+      <span class="nm" style="font-size:12px">${it.label}</span>
+      <select data-shape="${it.shape.a}">${opts}</select>
+    </div>
+    <div class="mini">
+      <span class="ml">Level</span>
+      <input type="range" data-slider="${it.level.a}" min="${it.level.min}" max="${it.level.max}" step="${it.level.step}" value="${it.level.d}">
+      <span class="mv" data-val="${it.level.a}">${ctlValStr(lk,it.level.d)}</span>
+    </div>
+    <div class="shape-sub" data-sub="${it.shape.a}">
+      <div class="mini">
+        <span class="ml">Curvature</span>
+        <input type="range" data-slider="${it.curv.a}" min="${CURV.min}" max="${CURV.max}" step="${CURV.step}" value="${CURV.d}">
+        <span class="mv" data-val="${it.curv.a}">${CURV.d.toFixed(1)}</span>
+      </div>
+      ${it.end?`<div class="mini">
+        <span class="ml">End mult</span>
+        <input type="range" data-slider="${it.end.a}" min="${it.end.min}" max="${it.end.max}" step="${it.end.step}" value="${it.end.d}">
+        <span class="mv" data-val="${it.end.a}">×${it.end.d.toFixed(2)}</span>
+      </div>`:""}
+    </div>`;
+  // register kinds for level/curv/end
+  S[`__k_${it.level.a}`]=lk;
+  return d;
+}
+
+function render(){
+  buildReadout();
+  const root=document.getElementById("sections");
+  SECTIONS.forEach(sec=>{
+    const wrap=document.createElement("div");
+    wrap.className="sect"+(sec.open?"":" collapsed");
+    let count=0;
+    sec.items.forEach(it=>{ if(it.type==="slider"||it.type==="shape") count++; });
+    wrap.innerHTML = `<div class="shead"><span class="chev">▾</span><span class="seyebrow">${sec.title}</span><span class="scount">${count}</span></div>
+      <div class="sbody">${sec.note?`<div class="snote">${sec.note}</div>`:""}</div>`;
+    const body=wrap.querySelector(".sbody");
+    sec.items.forEach(it=>{
+      if(it.type==="region"){ const t=document.createElement("div"); t.className="region-tag"; t.textContent="── "+it.label+" ──"; body.appendChild(t); }
+      else if(it.type==="slider"){ S[it.a]=it.d; S[`__k_${it.a}`]=it.k; body.appendChild(sliderRow(it)); }
+      else if(it.type==="shape"){ S[it.shape.a]=it.shape.opts[0]; S[it.level.a]=it.level.d; S[it.curv.a]=CURV.d; if(it.end)S[it.end.a]=it.end.d; body.appendChild(shapeRow(it)); }
+    });
+    wrap.querySelector(".shead").addEventListener("click",()=>wrap.classList.toggle("collapsed"));
+    root.appendChild(wrap);
+  });
+  renderCalibrationSection();
+  wireControls();
+}
+
+function wireControls(){
+  // sliders: live UI on input, write on change
+  document.querySelectorAll("[data-slider]").forEach(sl=>{
+    const a=sl.dataset.slider;
+    sl.addEventListener("input",()=>{ const v=parseFloat(sl.value); S[a]=v; reflect(a,v); });
+    sl.addEventListener("change",()=>{ if(ready) writeOne(a, S[a]); });
+  });
+  // number boxes
+  document.querySelectorAll("[data-num]").forEach(nb=>{
+    const a=nb.dataset.num;
+    nb.addEventListener("change",()=>{
+      let v=parseFloat(nb.value); if(isNaN(v)) v=S[a];
+      const sl=document.querySelector(`[data-slider="${a}"]`);
+      v=Math.max(parseFloat(sl.min), Math.min(parseFloat(sl.max), v)); // clamp to slider range for the handle, box keeps typed
+      S[a]=parseFloat(nb.value); reflect(a,S[a]);
+      if(ready) writeOne(a, S[a]);
+    });
+  });
+  // shape dropdowns
+  document.querySelectorAll("[data-shape]").forEach(se=>{
+    const a=se.dataset.shape;
+    se.addEventListener("change",()=>{
+      S[a]=se.value;
+      const sub=document.querySelector(`[data-sub="${a}"]`);
+      const passthrough = (se.value==="Flat"||se.value==="Granular");
+      if(sub) sub.classList.toggle("on", !passthrough);
+      if(ready) writeOne(a, S[a]);
+    });
+  });
+  document.getElementById("btnRead").addEventListener("click", readFromExcel);
+  document.getElementById("btnReset").addEventListener("click", resetAll);
+}
+
+function reflect(a,v){ // update the value label + sibling box/slider for an address
+  const k = S[`__k_${a}`] || "num";
+  document.querySelectorAll(`[data-val="${a}"]`).forEach(s=>{ s.textContent = ctlValStr(k,v); });
+  const sl=document.querySelector(`[data-slider="${a}"]`);
+  const nb=document.querySelector(`[data-num="${a}"]`);
+  if(sl && parseFloat(sl.value)!==v && v>=parseFloat(sl.min) && v<=parseFloat(sl.max)) sl.value=v;
+  if(nb && document.activeElement!==nb) nb.value=numShow(k,v);
+}
+
+/* ============================================================
+   EXCEL I/O
+   ============================================================ */
+const CP = "Control Panel";
+const SUM = "Summary 5-stream";
+
+function allAddrs(){
+  const out=[];
+  for(const k in S){ if(!k.startsWith("__")) out.push(k); }
+  return out;
+}
+
+// The Control Panel sheet is protected so users can't break the model by hand.
+// The add-in is the authorised writer: it unlocks, writes, then re-locks each time.
+async function tryReprotect(){
+  try{ await Excel.run(async ctx=>{ ctx.workbook.worksheets.getItem(CP).protection.protect(); await ctx.sync(); }); }
+  catch(_){ /* best effort */ }
+}
+
+async function writeOne(addr, value){
+  pill("writing…","work");
+  try{
+    await Excel.run(async ctx=>{
+      const sh=ctx.workbook.worksheets.getItem(CP);
+      sh.protection.unprotect();            // passwordless unlock
+      sh.getRange(addr).values=[[value]];
+      sh.protection.protect();              // re-lock
+      ctx.workbook.application.calculate(Excel.CalculationType.full);
+      await ctx.sync();
+    });
+    await refreshReadout();
+    pill("synced ✓","ok");
+  }catch(e){ await tryReprotect(); showErr(e); }
+}
+
+async function writeMany(updates){ // [{addr,value}]
+  pill("writing…","work");
+  try{
+    await Excel.run(async ctx=>{
+      const sh=ctx.workbook.worksheets.getItem(CP);
+      sh.protection.unprotect();
+      updates.forEach(u=> sh.getRange(u.addr).values=[[u.value]]);
+      sh.protection.protect();
+      ctx.workbook.application.calculate(Excel.CalculationType.full);
+      await ctx.sync();
+    });
+    await refreshReadout();
+    pill("synced ✓","ok");
+  }catch(e){ await tryReprotect(); showErr(e); }
+}
+
+async function refreshReadout(){
+  try{
+    await Excel.run(async ctx=>{
+      const s=ctx.workbook.worksheets.getItem(SUM);
+      const rev=s.getRange("C52:Q52"); rev.load("values");
+      const net=s.getRange("C59:Q59"); net.load("values");
+      await ctx.sync();
+      const R=rev.values[0], N=net.values[0];
+      const cum=(arr,off)=>arr.slice(off,off+5).reduce((a,b)=>a+(+b||0),0);
+      const map={p:0,c:5,o:10};
+      for(const id in map){
+        document.getElementById("rev_"+id).textContent = fmtM(cum(R,map[id]));
+        document.getElementById("net_"+id).textContent = fmtM(cum(N,map[id]));
+      }
+    });
+  }catch(e){ /* readout is best-effort */ }
+}
+
+async function readFromExcel(){
+  pill("reading…","work");
+  try{
+    const addrs=allAddrs();
+    await Excel.run(async ctx=>{
+      const sh=ctx.workbook.worksheets.getItem(CP);
+      const ranges = addrs.map(a=>{ const r=sh.getRange(a); r.load("values"); return r; });
+      await ctx.sync();
+      addrs.forEach((a,i)=>{
+        const v=ranges[i].values[0][0];
+        if(v===null||v===undefined) return;
+        S[a]=v;
+        // shape selects hold strings; others numbers
+        const se=document.querySelector(`[data-shape="${a}"]`);
+        if(se){ se.value=String(v);
+          const sub=document.querySelector(`[data-sub="${a}"]`);
+          const pass=(v==="Flat"||v==="Granular"); if(sub) sub.classList.toggle("on",!pass);
+        } else { reflect(a, typeof v==="number"?v:parseFloat(v)); }
+      });
+    });
+    await refreshReadout();
+    await readCalibration();
+    ready=true; pill("synced ✓","ok");
+    document.getElementById("errBanner").classList.remove("on");
+  }catch(e){ showErr(e); }
+}
+
+async function resetAll(){
+  const ups=[];
+  SECTIONS.forEach(sec=>sec.items.forEach(it=>{
+    if(it.type==="slider"){ ups.push({addr:it.a,value:it.d}); }
+    else if(it.type==="shape"){
+      ups.push({addr:it.shape.a,value:it.shape.opts[0]});
+      ups.push({addr:it.level.a,value:it.level.d});
+      ups.push({addr:it.curv.a,value:CURV.d});
+      if(it.end) ups.push({addr:it.end.a,value:it.end.d});
+    }
+  }));
+  // update UI first
+  ups.forEach(u=>{ S[u.addr]=u.value;
+    const se=document.querySelector(`[data-shape="${u.addr}"]`);
+    if(se){ se.value=u.value; const sub=document.querySelector(`[data-sub="${u.addr}"]`); const pass=(u.value==="Flat"||u.value==="Granular"); if(sub)sub.classList.toggle("on",!pass); }
+    else reflect(u.addr,u.value);
+  });
+  await writeMany(ups);
+}
+
+function showErr(e){
+  console.error(e);
+  pill("error","err");
+  const b=document.getElementById("errBanner");
+  const msg = (e&&e.message)?e.message:String(e);
+  let hint="";
+  if(/ItemNotFound|getItem|worksheet/i.test(msg))
+    hint=" — make sure the Kuza Kazi model workbook is the active workbook, then click Read from Excel.";
+  b.textContent = "Couldn’t reach the workbook"+hint+"  ("+msg+")";
+  b.classList.add("on");
+}
+
+/* ============================================================
+   CALIBRATION GRID  (per-stream Y1–Y5 trajectories, one scenario at a time)
+   ============================================================ */
+const SCN_NAME = {P:"Pessimistic", C:"Conservative", O:"Optimistic"};
+
+function calAddr(stream, driver, i){ return YEAR_COLS[i] + stream[driver][calScn]; }
+
+function renderCalibrationSection(){
+  const root=document.getElementById("sections");
+  const wrap=document.createElement("div");
+  wrap.className="sect collapsed";
+  wrap.innerHTML=`
+    <div class="shead"><span class="chev">▾</span><span class="seyebrow">Calibration — per-stream trajectories</span><span class="scount">${STREAMS.length}</span></div>
+    <div class="sbody">
+      <div class="snote">Baseline merchant counts and digital-share path for each stream, year by year. Shown one scenario at a time. These set the curve the controls above ride on.</div>
+      <div class="scn-toggle" id="calToggle">
+        ${Object.keys(SCN_NAME).map(k=>`<button data-scn="${k}" class="${k===calScn?"on":""}">${SCN_NAME[k]}</button>`).join("")}
+      </div>
+      <div id="calGrid"></div>
+    </div>`;
+  wrap.querySelector(".shead").addEventListener("click",()=>wrap.classList.toggle("collapsed"));
+  wrap.querySelectorAll("#calToggle button").forEach(b=>{
+    b.addEventListener("click",()=>{
+      calScn=b.dataset.scn;
+      wrap.querySelectorAll("#calToggle button").forEach(x=>x.classList.toggle("on",x===b));
+      renderCalibrationGrid();
+      if(ready) readCalibration();
+    });
+  });
+  root.appendChild(wrap);
+  renderCalibrationGrid();
+}
+
+function calLine(stream, driver, label){
+  const cells = YEAR_COLS.map((_,i)=>{
+    const a=calAddr(stream,driver,i);
+    const step = driver==="dig" ? "0.01" : "100";
+    const mn = "0", mx = driver==="dig" ? "1" : "";
+    return `<input type="number" data-cal="${a}" data-kind="${driver}" step="${step}" min="${mn}"${mx?` max="${mx}"`:""}>`;
+  }).join("");
+  return `<div class="cal-line"><span class="dl">${label}</span>${cells}</div>`;
+}
+
+function renderCalibrationGrid(){
+  const g=document.getElementById("calGrid"); if(!g) return;
+  g.innerHTML = `<div class="cal-head"><span></span><span>Y1</span><span>Y2</span><span>Y3</span><span>Y4</span><span>Y5</span></div>` +
+    STREAMS.map(s=>`<div class="cal-stream">
+        <div class="cal-name">${s.name}</div>
+        ${calLine(s,"merch","Merchants")}
+        ${calLine(s,"dig","Digital")}
+      </div>`).join("");
+  g.querySelectorAll("[data-cal]").forEach(nb=>{
+    nb.addEventListener("change",()=>{
+      const a=nb.dataset.cal, kind=nb.dataset.kind;
+      let v=parseFloat(nb.value); if(isNaN(v)){ return; }
+      if(kind==="dig") v=Math.max(0,Math.min(1,v));
+      else v=Math.max(0,Math.round(v));
+      nb.value=v;
+      if(ready) writeOne(a,v);
+    });
+  });
+}
+
+async function readCalibration(){
+  try{
+    const boxes=[...document.querySelectorAll("[data-cal]")];
+    if(!boxes.length) return;
+    await Excel.run(async ctx=>{
+      const sh=ctx.workbook.worksheets.getItem(CP);
+      const rs=boxes.map(b=>{ const r=sh.getRange(b.dataset.cal); r.load("values"); return r; });
+      await ctx.sync();
+      boxes.forEach((b,i)=>{ const v=rs[i].values[0][0]; if(v!==null&&v!==undefined) b.value=v; });
+    });
+  }catch(e){ /* best effort */ }
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+Office.onReady(info=>{
+  render();
+  if(info.host===Office.HostType.Excel){
+    readFromExcel(); // pulls current workbook state, then marks ready
+  } else {
+    pill("not in Excel","err");
+    document.getElementById("errBanner").textContent="Open this panel inside Excel.";
+    document.getElementById("errBanner").classList.add("on");
+  }
+});
+</script>
+</body>
+</html>
