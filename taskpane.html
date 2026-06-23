@@ -71,7 +71,7 @@
 <body>
 <div class="wrap">
   <div class="topbar">
-    <div><h1>Kuza Kazi · Control Panel</h1><div class="sub">Conservative base · tune levels, curves &amp; correlations · v7</div></div>
+    <div><h1>Kuza Kazi · Control Panel</h1><div class="sub">Conservative base · tune levels, curves &amp; correlations · v8</div></div>
     <button class="btn" id="resetAll">Reset all</button>
   </div>
   <div class="status" id="status">Connecting…</div>
@@ -86,14 +86,24 @@
 const SHEET="Control Panel", MODEL="Model";
 const CURVES=["Calibrated","Linear","S-curve","Front-loaded","Back-loaded"];
 const DRL_FMT=l=>/merchant/i.test(l)?"num":"arpu";
-let baseY={},curY={},singleV={},curveV={},drvV={},betaV={},drvDef={},betaDef={};
+let baseY={},curY={},singleV={},curveV={},drvV={},betaV={},drvDef={},betaDef={},derivedV={};
 let STRUCT={head:[],markets:[]}, IMPACT={rev:-1,na:-1,cum:-1}, ELASTIC_ROWS=[];
 
 const fNum=v=>Math.round(v).toLocaleString();
 const fArpu=v=>"$"+(v>=10?v.toFixed(1):v.toFixed(2));
 const fUsd=v=>"$"+Math.round(v).toLocaleString();
+const fPct=v=>(v*100).toFixed(2)+"%";
+const fDec=v=>(+v).toFixed(2);
+const fDays=v=>Math.round(v)+"d";
 const fK=v=>{const a=Math.abs(v);if(a>=1e6)return (v/1e6).toFixed(2)+"M";if(a>=1e3)return (v/1e3).toFixed(0)+"k";return Math.round(v).toString();};
-function fmtVal(f,v){return f==="num"?fNum(v):f==="arpu"?fArpu(v):f==="usd"?fUsd(v):v;}
+function fmtVal(f,v){return f==="num"?fNum(v):f==="arpu"?fArpu(v):f==="usd"?fUsd(v):f==="pct"?fPct(v):f==="dec"?fDec(v):f==="days"?fDays(v):v;}
+// resolve a per-year grid driver's display kind from its cell number-format (v8: adds pct/dec/days)
+function levelFmt(numfmt){const f=(numfmt==null?"":numfmt).toString();
+  if(f.indexOf("%")>=0)return"pct";
+  if(f.indexOf("day")>=0)return"days";
+  if(f.indexOf("$")>=0)return f.indexOf(".00")>=0?"arpu":"usd";
+  if(f.indexOf(".00")>=0)return"dec";
+  return"num";}
 function setStatus(t,c){const e=document.getElementById("status");e.textContent=t;e.className="status "+(c||"");}
 const numOf=x=>(x===null||x===""||x===undefined||isNaN(Number(x)))?null:Number(x);
 // map a cell number-format string to a control kind
@@ -113,12 +123,12 @@ Office.onReady(info=>{
 async function loadState(){
   await Excel.run(async ctx=>{
     const sh=ctx.workbook.worksheets.getItem(SHEET);
-    const rng=sh.getRange("A6:N95").load("values, numberFormat");
+    const rng=sh.getRange("A6:N115").load("values, numberFormat, formulas");
     const mod=ctx.workbook.worksheets.getItem(MODEL);
-    const mrng=mod.getRange("A1:A160").load("values");
+    const mrng=mod.getRange("A1:A180").load("values");
     await ctx.sync();
-    baseY={};curY={};singleV={};curveV={};drvV={};betaV={};drvDef={};betaDef={};STRUCT={head:[],markets:[]};ELASTIC_ROWS=[];
-    const v=rng.values, F=rng.numberFormat;
+    baseY={};curY={};singleV={};curveV={};drvV={};betaV={};drvDef={};betaDef={};derivedV={};STRUCT={head:[],markets:[]};ELASTIC_ROWS=[];
+    const v=rng.values, F=rng.numberFormat, Fm=rng.formulas;
     let curMarket=null,curSeg=null,mode="";
     for(let i=0;i<v.length;i++){
       const sr=6+i; const Araw=v[i][0]; const A=(Araw==null?"":Araw).toString(); const At=A.trim();
@@ -152,10 +162,13 @@ async function loadState(){
         const m=v[i][12]; const beta=numOf(v[i][13]); const dv=(m||"Revenue");
         drvV[sr]=dv;betaV[sr]=(beta===null?1:beta);drvDef[sr]=dv;betaDef[sr]=betaV[sr];ELASTIC_ROWS.push(sr);
       } else if(mode==="seg" && curSeg){
+        const Bf=Fm[i][1]; const isFormulaB=(typeof Bf==="string" && Bf.charAt(0)==="=");
         if(Btext){ // growth-curve dropdown (text base)
           curSeg.drivers.push({type:"curve",row:sr,label:At}); curveV[sr]={base:Braw,cur:v[i][7]};
-        } else if(perYear){ // merchant / ARPU 5-year driver
-          curSeg.drivers.push({type:"level",row:sr,label:At,fmt:DRL_FMT(At)}); baseY[sr]=base;curY[sr]=cur;
+        } else if(perYear && isFormulaB){ // DERIVED, locked row (e.g. Payments ARPU) → read-only display
+          curSeg.drivers.push({type:"derived",row:sr,label:At}); derivedV[sr]=cur;
+        } else if(perYear){ // merchant / factor / ARPU 5-year driver — kind from the cell format
+          curSeg.drivers.push({type:"level",row:sr,label:At,fmt:levelFmt(F[i][1])}); baseY[sr]=base;curY[sr]=cur;
         } else { // single numeric in a segment → start month
           curSeg.drivers.push({type:"month",row:sr,label:At}); singleV[sr]={base:Bnum,cur:numOf(v[i][7]),kind:"mo"};
         }
@@ -208,21 +221,24 @@ function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=nu
 function levelNode(row,label,fmt,isCost){
   const wrap=el("div","drv"+(isCost?" cost":""));
   const base=baseY[row],cur=curY[row];
+  // edit-year input (de)serialization: pct shows ×100 and stores the fraction
+  const toInput=x=>fmt==="pct"?+(x*100).toFixed(3):(fmt==="num"||fmt==="days"||fmt==="usd")?Math.round(x):+(+x).toFixed(4);
+  const fromInput=x=>fmt==="pct"?x/100:x;
   const dn=el("div","dn");dn.appendChild(el("span","dnm",label));const fac=el("span","fac","×1.00");dn.appendChild(fac);wrap.appendChild(dn);
   wrap.appendChild(el("div","ref","base "+fmtVal(fmt,base[0])+" → "+fmtVal(fmt,base[4])));
   const rf=el("div","rowflex");const sl=el("input");sl.type="range";sl.min="0.25";sl.max="3";sl.step="0.05";sl.value="1";rf.appendChild(sl);wrap.appendChild(rf);
   const cd=el("div","cur");const spans=[0,1,2,3,4].map(i=>el("span",null,fmtVal(fmt,cur[i])));spans.forEach(s=>{const c=el("span");c.appendChild(s);cd.appendChild(c);});wrap.appendChild(cd);
   const tog=el("button","lnk","edit years ▾");wrap.appendChild(tog);
   const grid=el("div","years hidden");
-  const inputs=[0,1,2,3,4].map(i=>{const yc=el("div","yc");yc.appendChild(el("div","yl","Y"+(i+1)));const inp=el("input");inp.type="number";inp.step="any";inp.value=cur[i];
-    inp.addEventListener("change",async()=>{const nv=parseFloat(inp.value);if(isNaN(nv))return;const vals=curY[row].slice();vals[i]=nv;await applyYears(row,vals);spans[i].textContent=fmtVal(fmt,nv);fac.textContent="×—";});
+  const inputs=[0,1,2,3,4].map(i=>{const yc=el("div","yc");yc.appendChild(el("div","yl","Y"+(i+1)));const inp=el("input");inp.type="number";inp.step="any";inp.value=toInput(cur[i]);
+    inp.addEventListener("change",async()=>{const nv=parseFloat(inp.value);if(isNaN(nv))return;const mv=fromInput(nv);const vals=curY[row].slice();vals[i]=mv;await applyYears(row,vals);spans[i].textContent=fmtVal(fmt,mv);fac.textContent="×—";});
     yc.appendChild(inp);return inp;});
   inputs.forEach(i=>grid.appendChild(i.parentNode));wrap.appendChild(grid);
   tog.addEventListener("click",()=>{grid.classList.toggle("hidden");tog.textContent=grid.classList.contains("hidden")?"edit years ▾":"hide years ▴";});
-  const apply=async()=>{const f=parseFloat(sl.value);fac.textContent="×"+f.toFixed(2);const vals=base.map(b=>b*f);await applyYears(row,vals);vals.forEach((x,i)=>{spans[i].textContent=fmtVal(fmt,x);inputs[i].value=(fmt==="num")?Math.round(x):+x.toFixed(4);});};
+  const apply=async()=>{const f=parseFloat(sl.value);fac.textContent="×"+f.toFixed(2);const vals=base.map(b=>b*f);await applyYears(row,vals);vals.forEach((x,i)=>{spans[i].textContent=fmtVal(fmt,x);inputs[i].value=toInput(x);});};
   sl.addEventListener("input",()=>{fac.textContent="×"+parseFloat(sl.value).toFixed(2);});
   sl.addEventListener("change",apply);
-  wrap._reset=(s)=>{sl.value="1";fac.textContent="×1.00";const vals=base.slice();vals.forEach((x,i)=>{spans[i].textContent=fmtVal(fmt,x);inputs[i].value=(fmt==="num")?Math.round(x):+x.toFixed(4);});return s?null:applyYears(row,vals);};
+  wrap._reset=(s)=>{sl.value="1";fac.textContent="×1.00";const vals=base.slice();vals.forEach((x,i)=>{spans[i].textContent=fmtVal(fmt,x);inputs[i].value=toInput(x);});return s?null:applyYears(row,vals);};
   if(isCost){
     const corr=el("div","corr");
     const left=el("div");left.appendChild(el("div","cl","Driver"));
@@ -256,6 +272,16 @@ function singleNode(row,label,kind){
   const toStore=v=>kind==="pct"?v/100:kind==="mo"?Math.round(v):v;
   inp.addEventListener("change",async()=>{let nv=parseFloat(inp.value);if(isNaN(nv))return;if((kind==="mo"||kind==="usd")&&nv<0)nv=0;await applySingle(row,toStore(nv));});
   wrap._reset=(s)=>{inp.value=ival(o.base);return s?null:applySingle(row,o.base);};
+  return wrap;
+}
+
+// derived / locked row (Base is a formula) — read-only display, no inputs
+function derivedNode(row,label){
+  const wrap=el("div","drv");
+  const dn=el("div","dn");dn.appendChild(el("span","dnm",label));const tag=el("span","fac","derived");tag.style.color="var(--mut)";dn.appendChild(tag);wrap.appendChild(dn);
+  const vals=derivedV[row]||[];
+  wrap.appendChild(el("div","ref","🔒 locked · "+vals.map(fArpu).join(" · ")));
+  wrap._reset=()=>null; // nothing to reset; recomputes from its factors
   return wrap;
 }
 
@@ -316,6 +342,7 @@ function buildUI(){
           let n;
           if(d.type==="curve")n=curveNode(d.row,d.label);
           else if(d.type==="month")n=singleNode(d.row,d.label,"mo");
+          else if(d.type==="derived")n=derivedNode(d.row,d.label);
           else n=levelNode(d.row,d.label,d.fmt,false);
           allDrivers.push(n);wrap.appendChild(n);
         });
