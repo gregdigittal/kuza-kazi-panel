@@ -7,11 +7,10 @@
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 <style>
   :root{
-    --bg:#172029; --panel:#1f2b36; --panel2:#26333f; --line:#314150;
-    --teal:#0E9F8E; --teal-dim:#0b7d70; --ink:#cdd9e1; --mut:#7d8f9c; --hi:#e7eef2;
-    --pos:#3ecf8e; --neg:#e2606a; --warn:#e8b54b;
-    --mono:"SF Mono",ui-monospace,Consolas,Menlo,monospace;
-    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --bg:#172029;--panel:#1f2b36;--panel2:#26333f;--line:#314150;--teal:#0E9F8E;--teal-dim:#0b7d70;
+    --ink:#cdd9e1;--mut:#7d8f9c;--hi:#e7eef2;--pos:#3ecf8e;--neg:#e2606a;--warn:#e8b54b;--violet:#9a6fe0;
+    --ke:#0E9F8E;--za:#4f86c6;--mz:#cda23f;
+    --mono:"SF Mono",ui-monospace,Consolas,Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:12px;line-height:1.35}
@@ -31,14 +30,18 @@
   table.kv td.lbl{text-align:left;font-family:var(--sans);color:var(--mut);font-size:10px}
   table.kv tr.head td{color:var(--mut);font-size:9px;border-bottom:1px solid var(--line)}
   .sec{margin:8px 0;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--panel)}
-  .sec>.hd{display:flex;justify-content:space-between;align-items:center;background:var(--panel2);padding:6px 9px;cursor:pointer;user-select:none}
+  .sec>.hd{display:flex;justify-content:space-between;align-items:center;padding:6px 9px;cursor:pointer;user-select:none;border-left:4px solid var(--mut)}
   .sec>.hd .nm{font-weight:600;color:var(--hi);font-size:11px;letter-spacing:.4px}
   .sec>.hd .ch{color:var(--mut);font-size:10px}
+  .sec.ke>.hd{border-left-color:var(--ke)} .sec.za>.hd{border-left-color:var(--za)} .sec.mz>.hd{border-left-color:var(--mz)} .sec.ho>.hd{border-left-color:var(--violet)}
   .sec .body{padding:4px 8px 8px}
   .seg{margin:6px 0 2px;padding-left:2px;border-left:2px solid var(--teal-dim)}
+  .seg.vert{border-left:2px solid var(--violet)}
   .seg .sgn{font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--teal);padding:3px 0 1px 6px}
+  .seg.vert .sgn{color:var(--violet)}
   .drv{padding:6px 4px 7px 6px;border-bottom:1px solid #243039}
   .drv:last-child{border-bottom:none}
+  .drv.cost{background:#1d2935;border-radius:5px;margin:4px 0;padding:7px 6px;border:1px solid #2b3a47}
   .drv .dn{display:flex;justify-content:space-between;align-items:baseline}
   .drv .dnm{font-size:11px;color:var(--ink)}
   .drv .fac{font-family:var(--mono);font-size:11px;color:var(--teal);min-width:42px;text-align:right}
@@ -46,14 +49,20 @@
   .rowflex{display:flex;align-items:center;gap:6px}
   input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:var(--line);border-radius:3px;outline:none}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--teal);cursor:pointer;border:2px solid #0b1a16}
-  input[type=number]{background:#141c24;border:1px solid var(--line);color:var(--hi);font-family:var(--mono);font-size:11px;border-radius:4px;padding:3px 5px;width:100%;text-align:right}
-  input[type=number]:focus{border-color:var(--teal);outline:none}
+  input[type=range].b::-webkit-slider-thumb{background:var(--violet);border-color:#221538}
+  input[type=number],select{background:#141c24;border:1px solid var(--line);color:var(--hi);font-family:var(--mono);font-size:11px;border-radius:4px;padding:3px 5px;width:100%;text-align:right}
+  select{text-align:left;font-family:var(--sans)}
+  input[type=number]:focus,select:focus{border-color:var(--teal);outline:none}
   .cur{font-family:var(--mono);font-size:9px;color:var(--mut);margin-top:3px;display:flex;justify-content:space-between;gap:4px}
   .cur span span{color:var(--ink)}
   .lnk{color:var(--mut);font-size:9px;text-decoration:underline;cursor:pointer;background:none;border:none;padding:2px 0;margin-top:3px}
   .years{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:5px}
   .years .yc{display:flex;flex-direction:column;gap:1px}
   .years .yl{font-size:8px;color:var(--mut);text-align:center}
+  .corr{margin-top:7px;padding-top:6px;border-top:1px dashed #34465a;display:grid;grid-template-columns:1fr 1.2fr;gap:6px;align-items:center}
+  .corr .cl{font-size:9px;color:var(--violet);letter-spacing:.4px;text-transform:uppercase}
+  .corr .bbox{display:flex;align-items:center;gap:5px}
+  .corr .bv{font-family:var(--mono);font-size:10px;color:var(--violet);min-width:38px}
   .hidden{display:none}
   .foot{font-size:9px;color:var(--mut);text-align:center;margin-top:10px}
 </style>
@@ -61,58 +70,45 @@
 <body>
 <div class="wrap">
   <div class="topbar">
-    <div>
-      <h1>Kuza Kazi · Control Panel</h1>
-      <div class="sub">Conservative base · tune to build a scenario</div>
-    </div>
+    <div><h1>Kuza Kazi · Control Panel</h1><div class="sub">Conservative base · tune levels &amp; correlations</div></div>
     <button class="btn" id="resetAll">Reset all</button>
   </div>
   <div class="status" id="status">Connecting…</div>
-
   <div class="impact">
     <div class="ttl">Consolidated impact (USD)</div>
-    <table class="kv" id="impactTbl">
-      <tr class="head"><td class="lbl"></td><td>Y1</td><td>Y2</td><td>Y3</td><td>Y4</td><td>Y5</td></tr>
-      <tr><td class="lbl">Revenue</td><td colspan="5" style="text-align:center;color:var(--mut)">—</td></tr>
-    </table>
+    <table class="kv" id="impactTbl"><tr><td colspan="6" style="text-align:center;color:var(--mut)">—</td></tr></table>
   </div>
-
   <div id="panel"></div>
   <div class="foot">Writes to the Control Panel sheet · formulas stay locked</div>
 </div>
-
 <script>
 const SHEET="Control Panel", MODEL="Model";
-const RATES=[
-  {key:"proc", label:"Payment processing (% of payments)", row:8},
-  {key:"comms",label:"Comms / messaging (% of revenue)",  row:9},
-  {key:"min",  label:"Minority interest (% of net)",       row:11},
+const GROUP_COSTS=[
+  {key:"ho",  label:"Head-office overhead ($/yr)", row:7, elastic:true},
+  {key:"mktg",label:"Channel & JV marketing ($/yr)", row:8, elastic:true},
+  {key:"comms",label:"Comms / messaging ($/yr)", row:9, elastic:true},
 ];
-const LICENCE={key:"lic", label:"Digittal licence (% of revenue)", row:10};
-const DR=[
-  {nm:"Avg active merchants", fmt:"num"},
-  {nm:"Payments ARPU ($/merch/mo)", fmt:"arpu"},
-  {nm:"Subscriptions ARPU ($/merch/mo)", fmt:"arpu"},
-  {nm:"Financial-svcs ARPU ($/merch/mo)", fmt:"arpu"},
-];
+const PROC={label:"Payment processing (% of payments)", row:10};
+const LICENCE={label:"Digittal licence (% of revenue)", row:11};
+const MINW={label:"Minority interest (% of net)", row:12};
+const DRL=["Avg active merchants","Payments ARPU ($/merch/mo)","Subscriptions ARPU ($/merch/mo)","Financial-svcs ARPU ($/merch/mo)"];
+const DRF=["num","arpu","arpu","arpu"];
 const MARKETS=[
-  {name:"Kenya", code:"KE", ohRow:13, segs:[{name:"KE Generic", rows:[15,16,17,18]}]},
-  {name:"South Africa", code:"ZA", ohRow:20, segs:[
-     {name:"ZA Building", rows:[22,23,24,25]},{name:"ZA Generic", rows:[27,28,29,30]}]},
-  {name:"Mozambique", code:"MZ", ohRow:32, segs:[
-     {name:"MZ FMCG", rows:[34,35,36,37]},{name:"MZ Generic", rows:[39,40,41,42]}]},
+  {name:"Kenya", code:"KE", ohRow:14, segs:[{name:"KE Generic",vert:false,rows:[16,17,18,19]}]},
+  {name:"South Africa", code:"ZA", ohRow:21, segs:[{name:"ZA Building",vert:true,rows:[23,24,25,26]},{name:"ZA Generic",vert:false,rows:[28,29,30,31]}]},
+  {name:"Mozambique", code:"MZ", ohRow:33, segs:[{name:"MZ FMCG",vert:true,rows:[35,36,37,38]},{name:"MZ Generic",vert:false,rows:[40,41,42,43]}]},
 ];
-const IMPACT={rev:96, na:104, cum:105};
+const IMPACT={rev:68, na:80, cum:81};
+const ELASTIC_ROWS=[7,8,9,14,21,33];
 
-let baseY={}, curY={}, rateV={};
+let baseY={},curY={},rateV={},drvV={},betaV={},drvDef={},betaDef={};
 
 const fNum=v=>Math.round(v).toLocaleString();
 const fArpu=v=>"$"+(v>=10?v.toFixed(1):v.toFixed(2));
 const fUsd=v=>"$"+Math.round(v).toLocaleString();
-const fPct=v=>(v*100).toFixed(v*100<1?2:1)+"%";
 const fK=v=>{const a=Math.abs(v);if(a>=1e6)return (v/1e6).toFixed(2)+"M";if(a>=1e3)return (v/1e3).toFixed(0)+"k";return Math.round(v).toString();};
-function fmtVal(fmt,v){return fmt==="num"?fNum(v):fmt==="arpu"?fArpu(v):fmt==="usd"?fUsd(v):fmt==="pct"?fPct(v):v;}
-function setStatus(t,cls){const e=document.getElementById("status");e.textContent=t;e.className="status "+(cls||"");}
+function fmtVal(f,v){return f==="num"?fNum(v):f==="arpu"?fArpu(v):f==="usd"?fUsd(v):v;}
+function setStatus(t,c){const e=document.getElementById("status");e.textContent=t;e.className="status "+(c||"");}
 
 Office.onReady(info=>{
   if(info.host!==Office.HostType.Excel){setStatus("Open this in Excel.","err");return;}
@@ -123,12 +119,13 @@ Office.onReady(info=>{
 async function loadState(){
   await Excel.run(async ctx=>{
     const sh=ctx.workbook.worksheets.getItem(SHEET);
-    const rng=sh.getRange("B6:L42").load("values");
-    await ctx.sync();
-    const v=rng.values;
-    const yrs=r=>{const a=v[r-6];return {base:[a[0],a[1],a[2],a[3],a[4]].map(Number),cur:[a[6],a[7],a[8],a[9],a[10]].map(Number)};};
-    [LICENCE.row,13,15,16,17,18,20,22,23,24,25,27,28,29,30,32,34,35,36,37,39,40,41,42].forEach(r=>{const o=yrs(r);baseY[r]=o.base;curY[r]=o.cur;});
-    RATES.forEach(rt=>{const a=v[rt.row-6];rateV[rt.row]={base:Number(a[0]),cur:Number(a[6])};});
+    const rng=sh.getRange("B6:N43").load("values"); await ctx.sync();
+    const v=rng.values;  // idx: B0..N12 ; base 0-4, current 6-10, driver 11, beta 12
+    const yrs=r=>{const a=v[r-6];return{base:[a[0],a[1],a[2],a[3],a[4]].map(Number),cur:[a[6],a[7],a[8],a[9],a[10]].map(Number)};};
+    const peryear=[7,8,9,11,14,16,17,18,19,21,23,24,25,26,28,29,30,31,33,35,36,37,38,40,41,42,43];
+    peryear.forEach(r=>{const o=yrs(r);baseY[r]=o.base;curY[r]=o.cur;});
+    [PROC.row,MINW.row].forEach(r=>{const a=v[r-6];rateV[r]={base:Number(a[0]),cur:Number(a[6])};});
+    ELASTIC_ROWS.forEach(r=>{const a=v[r-6];drvV[r]=a[11]||"Revenue";betaV[r]=Number(a[12]);drvDef[r]=drvV[r];betaDef[r]=betaV[r];});
   });
 }
 
@@ -138,143 +135,131 @@ async function withSheet(fn){
     await Excel.run(async ctx=>{
       const sh=ctx.workbook.worksheets.getItem(SHEET);
       try{sh.protection.unprotect();}catch(e){}
-      await ctx.sync();
-      fn(ctx,sh);
-      await ctx.sync();
+      await ctx.sync(); fn(ctx,sh); await ctx.sync();
       try{sh.protection.protect();}catch(e){}
-      ctx.workbook.application.calculate(Excel.CalculationType.full);
-      await ctx.sync();
+      ctx.workbook.application.calculate(Excel.CalculationType.full); await ctx.sync();
     });
-    await refreshImpact();
-    setStatus("Updated","ok");
+    await refreshImpact(); setStatus("Updated","ok");
   }catch(e){setStatus("Error: "+e.message,"err");}
 }
-async function applyYears(row,vals){ curY[row]=vals.slice(); await withSheet((c,s)=>{s.getRange("H"+row+":L"+row).values=[vals];}); }
-async function applyRate(row,val){ rateV[row].cur=val; await withSheet((c,s)=>{s.getRange("H"+row).values=[[val]];}); }
+async function applyYears(row,vals){curY[row]=vals.slice();await withSheet((c,s)=>{s.getRange("H"+row+":L"+row).values=[vals];});}
+async function applyRate(row,val){rateV[row].cur=val;await withSheet((c,s)=>{s.getRange("H"+row).values=[[val]];});}
+async function applyDriver(row,val){drvV[row]=val;await withSheet((c,s)=>{s.getRange("M"+row).values=[[val]];});}
+async function applyBeta(row,val){betaV[row]=val;await withSheet((c,s)=>{s.getRange("N"+row).values=[[val]];});}
 
 async function refreshImpact(){
   await Excel.run(async ctx=>{
     const m=ctx.workbook.worksheets.getItem(MODEL);
     const rev=m.getRange("C"+IMPACT.rev+":G"+IMPACT.rev).load("values");
-    const na =m.getRange("C"+IMPACT.na +":G"+IMPACT.na ).load("values");
+    const na=m.getRange("C"+IMPACT.na+":G"+IMPACT.na).load("values");
     const cum=m.getRange("C"+IMPACT.cum+":G"+IMPACT.cum).load("values");
     await ctx.sync();
     const rows=[["Revenue",rev.values[0]],["Net attrib.",na.values[0]],["Net cash (cum)",cum.values[0]]];
-    let html='<tr class="head"><td class="lbl"></td><td>Y1</td><td>Y2</td><td>Y3</td><td>Y4</td><td>Y5</td></tr>';
-    rows.forEach(([lbl,arr])=>{
-      html+='<tr><td class="lbl">'+lbl+'</td>'+arr.map(x=>{const c=Number(x)<0?'color:var(--neg)':'';return '<td style="'+c+'">'+fK(Number(x))+'</td>';}).join('')+'</tr>';
-    });
-    document.getElementById("impactTbl").innerHTML=html;
+    let h='<tr class="head"><td class="lbl"></td><td>Y1</td><td>Y2</td><td>Y3</td><td>Y4</td><td>Y5</td></tr>';
+    rows.forEach(([l,a])=>{h+='<tr><td class="lbl">'+l+'</td>'+a.map(x=>{const c=Number(x)<0?'color:var(--neg)':'';return '<td style="'+c+'">'+fK(Number(x))+'</td>';}).join('')+'</tr>';});
+    document.getElementById("impactTbl").innerHTML=h;
   });
 }
 
-function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e;}
+function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
 
-function driverNode(row,label,fmt){
-  const wrap=el("div","drv");
-  const base=baseY[row], cur=curY[row];
-  const dn=el("div","dn"); dn.appendChild(el("span","dnm",label));
-  const fac=el("span","fac","×1.00"); dn.appendChild(fac); wrap.appendChild(dn);
+function levelNode(row,label,fmt,isCost){
+  const wrap=el("div","drv"+(isCost?" cost":""));
+  const base=baseY[row],cur=curY[row];
+  const dn=el("div","dn");dn.appendChild(el("span","dnm",label));const fac=el("span","fac","×1.00");dn.appendChild(fac);wrap.appendChild(dn);
   wrap.appendChild(el("div","ref","base "+fmtVal(fmt,base[0])+" → "+fmtVal(fmt,base[4])));
-  const rf=el("div","rowflex");
-  const sl=el("input"); sl.type="range"; sl.min="0.25"; sl.max="3"; sl.step="0.05"; sl.value="1"; rf.appendChild(sl); wrap.appendChild(rf);
-  const cd=el("div","cur");
-  const spans=[0,1,2,3,4].map(i=>el("span",null,fmtVal(fmt,cur[i])));
-  spans.forEach(s=>{const c=el("span");c.appendChild(s);cd.appendChild(c);});
-  wrap.appendChild(cd);
-  const tog=el("button","lnk","edit years ▾"); wrap.appendChild(tog);
+  const rf=el("div","rowflex");const sl=el("input");sl.type="range";sl.min="0.25";sl.max="3";sl.step="0.05";sl.value="1";rf.appendChild(sl);wrap.appendChild(rf);
+  const cd=el("div","cur");const spans=[0,1,2,3,4].map(i=>el("span",null,fmtVal(fmt,cur[i])));spans.forEach(s=>{const c=el("span");c.appendChild(s);cd.appendChild(c);});wrap.appendChild(cd);
+  const tog=el("button","lnk","edit years ▾");wrap.appendChild(tog);
   const grid=el("div","years hidden");
-  const inputs=[0,1,2,3,4].map(i=>{
-    const yc=el("div","yc"); yc.appendChild(el("div","yl","Y"+(i+1)));
-    const inp=el("input"); inp.type="number"; inp.step="any"; inp.value=cur[i];
+  const inputs=[0,1,2,3,4].map(i=>{const yc=el("div","yc");yc.appendChild(el("div","yl","Y"+(i+1)));const inp=el("input");inp.type="number";inp.step="any";inp.value=cur[i];
     inp.addEventListener("change",async()=>{const nv=parseFloat(inp.value);if(isNaN(nv))return;const vals=curY[row].slice();vals[i]=nv;await applyYears(row,vals);spans[i].textContent=fmtVal(fmt,nv);fac.textContent="×—";});
-    yc.appendChild(inp); return inp;
-  });
-  inputs.forEach(i=>grid.appendChild(i.parentNode));
-  wrap.appendChild(grid);
+    yc.appendChild(inp);return inp;});
+  inputs.forEach(i=>grid.appendChild(i.parentNode));wrap.appendChild(grid);
   tog.addEventListener("click",()=>{grid.classList.toggle("hidden");tog.textContent=grid.classList.contains("hidden")?"edit years ▾":"hide years ▴";});
   const apply=async()=>{const f=parseFloat(sl.value);fac.textContent="×"+f.toFixed(2);const vals=base.map(b=>b*f);await applyYears(row,vals);vals.forEach((x,i)=>{spans[i].textContent=fmtVal(fmt,x);inputs[i].value=(fmt==="num")?Math.round(x):+x.toFixed(4);});};
   sl.addEventListener("input",()=>{fac.textContent="×"+parseFloat(sl.value).toFixed(2);});
   sl.addEventListener("change",apply);
-  wrap._reset=(silent)=>{sl.value="1";fac.textContent="×1.00";const vals=base.slice();vals.forEach((x,i)=>{spans[i].textContent=fmtVal(fmt,x);inputs[i].value=(fmt==="num")?Math.round(x):+x.toFixed(4);});return silent?null:applyYears(row,vals);};
+  wrap._reset=(s)=>{sl.value="1";fac.textContent="×1.00";const vals=base.slice();vals.forEach((x,i)=>{spans[i].textContent=fmtVal(fmt,x);inputs[i].value=(fmt==="num")?Math.round(x):+x.toFixed(4);});return s?null:applyYears(row,vals);};
+  // correlation controls for cost lines
+  if(isCost){
+    const corr=el("div","corr");
+    const left=el("div"); left.appendChild(el("div","cl","Driver"));
+    const dsel=document.createElement("select");["Revenue","Merchants"].forEach(o=>{const op=document.createElement("option");op.value=o;op.textContent=o;dsel.appendChild(op);});dsel.value=drvV[row];
+    dsel.addEventListener("change",()=>applyDriver(row,dsel.value)); left.appendChild(dsel);
+    const right=el("div"); right.appendChild(el("div","cl","Elasticity β"));
+    const bb=el("div","bbox"); const bsl=el("input","b");bsl.type="range";bsl.min="0";bsl.max="1.5";bsl.step="0.05";bsl.value=betaV[row];
+    const bv=el("span","bv",(+betaV[row]).toFixed(2)); bb.appendChild(bsl);bb.appendChild(bv);right.appendChild(bb);
+    bsl.addEventListener("input",()=>bv.textContent=parseFloat(bsl.value).toFixed(2));
+    bsl.addEventListener("change",()=>applyBeta(row,parseFloat(bsl.value)));
+    corr.appendChild(left);corr.appendChild(right);wrap.appendChild(corr);
+    const baseReset=wrap._reset;
+    wrap._reset=(s)=>{dsel.value=drvDef[row];bsl.value=betaDef[row];bv.textContent=(+betaDef[row]).toFixed(2);return baseReset(s);};
+    wrap._resetCorr=()=>{drvV[row]=drvDef[row];betaV[row]=betaDef[row];};
+  }
   return wrap;
 }
-
-function rateNode(rt){
-  const wrap=el("div","drv"); const o=rateV[rt.row];
-  const dn=el("div","dn"); dn.appendChild(el("span","dnm",rt.label)); wrap.appendChild(dn);
+function rateNode(cfg){
+  const wrap=el("div","drv");const o=rateV[cfg.row];
+  const dn=el("div","dn");dn.appendChild(el("span","dnm",cfg.label));wrap.appendChild(dn);
   wrap.appendChild(el("div","ref","base "+(o.base*100).toFixed(2)+"%"));
-  const rf=el("div","rowflex");
-  const inp=el("input"); inp.type="number"; inp.step="any"; inp.value=+(o.cur*100).toFixed(3);
-  const suf=el("span",null,"%"); suf.style.color="var(--mut)"; suf.style.fontSize="10px";
-  rf.appendChild(inp); rf.appendChild(suf); wrap.appendChild(rf);
-  inp.addEventListener("change",async()=>{const nv=parseFloat(inp.value);if(isNaN(nv))return;await applyRate(rt.row,nv/100);});
-  wrap._reset=(silent)=>{inp.value=+(o.base*100).toFixed(3);return silent?null:applyRate(rt.row,o.base);};
+  const rf=el("div","rowflex");const inp=el("input");inp.type="number";inp.step="any";inp.value=+(o.cur*100).toFixed(3);
+  const suf=el("span",null,"%");suf.style.color="var(--mut)";suf.style.fontSize="10px";rf.appendChild(inp);rf.appendChild(suf);wrap.appendChild(rf);
+  inp.addEventListener("change",async()=>{const nv=parseFloat(inp.value);if(isNaN(nv))return;await applyRate(cfg.row,nv/100);});
+  wrap._reset=(s)=>{inp.value=+(o.base*100).toFixed(3);return s?null:applyRate(cfg.row,o.base);};
   return wrap;
 }
-
 function licenceNode(){
-  const wrap=el("div","drv");
-  const dn=el("div","dn"); dn.appendChild(el("span","dnm",LICENCE.label)); wrap.appendChild(dn);
-  const base=baseY[LICENCE.row], cur=curY[LICENCE.row];
+  const wrap=el("div","drv");const dn=el("div","dn");dn.appendChild(el("span","dnm",LICENCE.label));wrap.appendChild(dn);
+  const base=baseY[LICENCE.row],cur=curY[LICENCE.row];
   wrap.appendChild(el("div","ref","base "+base.map(x=>(x*100).toFixed(1)+"%").join(" · ")));
   const grid=el("div","years");
-  const inputs=[0,1,2,3,4].map(i=>{
-    const yc=el("div","yc"); yc.appendChild(el("div","yl","Y"+(i+1)));
-    const inp=el("input"); inp.type="number"; inp.step="any"; inp.value=+(cur[i]*100).toFixed(2);
+  const inputs=[0,1,2,3,4].map(i=>{const yc=el("div","yc");yc.appendChild(el("div","yl","Y"+(i+1)));const inp=el("input");inp.type="number";inp.step="any";inp.value=+(cur[i]*100).toFixed(2);
     inp.addEventListener("change",async()=>{const nv=parseFloat(inp.value);if(isNaN(nv))return;const vals=curY[LICENCE.row].slice();vals[i]=nv/100;await applyYears(LICENCE.row,vals);});
-    yc.appendChild(inp); return inp;
-  });
-  inputs.forEach(i=>grid.appendChild(i.parentNode));
-  wrap.appendChild(grid);
-  wrap._reset=(silent)=>{inputs.forEach((inp,i)=>inp.value=+(base[i]*100).toFixed(2));return silent?null:applyYears(LICENCE.row,base.slice());};
+    yc.appendChild(inp);return inp;});
+  inputs.forEach(i=>grid.appendChild(i.parentNode));wrap.appendChild(grid);
+  wrap._reset=(s)=>{inputs.forEach((inp,i)=>inp.value=+(base[i]*100).toFixed(2));return s?null:applyYears(LICENCE.row,base.slice());};
   return wrap;
 }
-
-function section(name,buildBody,open){
-  const sec=el("div","sec");
-  const hd=el("div","hd"); hd.appendChild(el("span","nm",name)); const ch=el("span","ch",open?"▾":"▸"); hd.appendChild(ch); sec.appendChild(hd);
-  const body=el("div","body"); if(!open)body.classList.add("hidden");
-  buildBody(body); sec.appendChild(body);
-  hd.addEventListener("click",()=>{body.classList.toggle("hidden");ch.textContent=body.classList.contains("hidden")?"▸":"▾";});
-  return sec;
+function section(name,cls,buildBody,open){
+  const sec=el("div","sec "+cls);const hd=el("div","hd");hd.appendChild(el("span","nm",name));const ch=el("span","ch",open?"▾":"▸");hd.appendChild(ch);sec.appendChild(hd);
+  const body=el("div","body");if(!open)body.classList.add("hidden");buildBody(body);sec.appendChild(body);
+  hd.addEventListener("click",()=>{body.classList.toggle("hidden");ch.textContent=body.classList.contains("hidden")?"▸":"▾";});return sec;
 }
-
 const allDrivers=[];
 function buildUI(){
-  const panel=document.getElementById("panel"); panel.innerHTML=""; allDrivers.length=0;
-  panel.appendChild(section("Head office",body=>{
-    RATES.forEach(rt=>{const n=rateNode(rt);allDrivers.push(n);body.appendChild(n);});
-    const ln=licenceNode();allDrivers.push(ln);body.appendChild(ln);
+  const panel=document.getElementById("panel");panel.innerHTML="";allDrivers.length=0;
+  panel.appendChild(section("Head office","ho",body=>{
+    GROUP_COSTS.forEach(c=>{const n=levelNode(c.row,c.label,"usd",true);allDrivers.push(n);body.appendChild(n);});
+    [rateNode(PROC),licenceNode(),rateNode(MINW)].forEach(n=>{allDrivers.push(n);body.appendChild(n);});
   },true));
   MARKETS.forEach(mk=>{
-    panel.appendChild(section(mk.name+"  ("+mk.code+")",body=>{
-      const oh=driverNode(mk.ohRow,mk.code+" operating overhead ($/yr)","usd");allDrivers.push(oh);body.appendChild(oh);
+    panel.appendChild(section(mk.name+"  ("+mk.code+")",mk.code.toLowerCase(),body=>{
+      const oh=levelNode(mk.ohRow,mk.code+" operating overhead ($/yr)","usd",true);allDrivers.push(oh);body.appendChild(oh);
       mk.segs.forEach(sg=>{
-        const wrap=el("div","seg"); wrap.appendChild(el("div","sgn",sg.name));
-        sg.rows.forEach((r,j)=>{const n=driverNode(r,DR[j].nm,DR[j].fmt);allDrivers.push(n);wrap.appendChild(n);});
+        const wrap=el("div","seg"+(sg.vert?" vert":""));wrap.appendChild(el("div","sgn",(sg.vert?"◆ ":"")+sg.name+(sg.vert?" · vertical":"")));
+        sg.rows.forEach((r,j)=>{const n=levelNode(r,DRL[j],DRF[j],false);allDrivers.push(n);wrap.appendChild(n);});
         body.appendChild(wrap);
       });
     },false));
   });
 }
-
 document.getElementById("resetAll").addEventListener("click",async()=>{
   setStatus("Resetting to base…","work");
-  allDrivers.forEach(n=>n._reset&&n._reset(true));
+  allDrivers.forEach(n=>{n._reset&&n._reset(true);n._resetCorr&&n._resetCorr();});
   try{
     await Excel.run(async ctx=>{
       const sh=ctx.workbook.worksheets.getItem(SHEET);
       try{sh.protection.unprotect();}catch(e){}
       await ctx.sync();
       Object.keys(baseY).forEach(r=>{sh.getRange("H"+r+":L"+r).values=[baseY[r]];curY[r]=baseY[r].slice();});
-      RATES.forEach(rt=>{sh.getRange("H"+rt.row).values=[[rateV[rt.row].base]];rateV[rt.row].cur=rateV[rt.row].base;});
+      [PROC.row,MINW.row].forEach(r=>{sh.getRange("H"+r).values=[[rateV[r].base]];rateV[r].cur=rateV[r].base;});
+      ELASTIC_ROWS.forEach(r=>{sh.getRange("M"+r).values=[[drvDef[r]]];sh.getRange("N"+r).values=[[betaDef[r]]];drvV[r]=drvDef[r];betaV[r]=betaDef[r];});
       await ctx.sync();
       try{sh.protection.protect();}catch(e){}
-      ctx.workbook.application.calculate(Excel.CalculationType.full);
-      await ctx.sync();
+      ctx.workbook.application.calculate(Excel.CalculationType.full);await ctx.sync();
     });
-    await refreshImpact(); setStatus("Reset to Conservative base","ok");
+    await refreshImpact();setStatus("Reset to Conservative base","ok");
   }catch(e){setStatus("Error: "+e.message,"err");}
 });
 </script>
