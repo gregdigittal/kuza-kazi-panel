@@ -37,8 +37,9 @@
   .sec .body{padding:4px 8px 8px}
   .seg{margin:6px 0 2px;padding-left:2px;border-left:2px solid var(--teal-dim)}
   .seg.vert{border-left:2px solid var(--violet)}
+  .seg.lic{border-left:2px solid var(--violet)}
   .seg .sgn{font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--teal);padding:3px 0 1px 6px}
-  .seg.vert .sgn{color:var(--violet)}
+  .seg.vert .sgn,.seg.lic .sgn{color:var(--violet)}
   .drv{padding:6px 4px 7px 6px;border-bottom:1px solid #243039}
   .drv:last-child{border-bottom:none}
   .drv.cost{background:#1d2935;border-radius:5px;margin:4px 0;padding:7px 6px;border:1px solid #2b3a47}
@@ -70,7 +71,7 @@
 <body>
 <div class="wrap">
   <div class="topbar">
-    <div><h1>Kuza Kazi · Control Panel</h1><div class="sub">Conservative base · tune levels &amp; correlations · v6</div></div>
+    <div><h1>Kuza Kazi · Control Panel</h1><div class="sub">Conservative base · tune levels, curves &amp; correlations · v7</div></div>
     <button class="btn" id="resetAll">Reset all</button>
   </div>
   <div class="status" id="status">Connecting…</div>
@@ -83,8 +84,9 @@
 </div>
 <script>
 const SHEET="Control Panel", MODEL="Model";
+const CURVES=["Calibrated","Linear","S-curve","Front-loaded","Back-loaded"];
 const DRL_FMT=l=>/merchant/i.test(l)?"num":"arpu";
-let baseY={},curY={},rateV={},drvV={},betaV={},drvDef={},betaDef={};
+let baseY={},curY={},singleV={},curveV={},drvV={},betaV={},drvDef={},betaDef={};
 let STRUCT={head:[],markets:[]}, IMPACT={rev:-1,na:-1,cum:-1}, ELASTIC_ROWS=[];
 
 const fNum=v=>Math.round(v).toLocaleString();
@@ -93,7 +95,14 @@ const fUsd=v=>"$"+Math.round(v).toLocaleString();
 const fK=v=>{const a=Math.abs(v);if(a>=1e6)return (v/1e6).toFixed(2)+"M";if(a>=1e3)return (v/1e3).toFixed(0)+"k";return Math.round(v).toString();};
 function fmtVal(f,v){return f==="num"?fNum(v):f==="arpu"?fArpu(v):f==="usd"?fUsd(v):v;}
 function setStatus(t,c){const e=document.getElementById("status");e.textContent=t;e.className="status "+(c||"");}
-const numOf=x=>(x===null||x===""||isNaN(Number(x)))?null:Number(x);
+const numOf=x=>(x===null||x===""||x===undefined||isNaN(Number(x)))?null:Number(x);
+// map a cell number-format string to a control kind
+function fmtKind(f){f=(f==null?"":f).toString();
+  if(f.indexOf("%")>=0)return"pct";
+  if(f.indexOf("\u00d7")>=0)return"mult";
+  if(f.indexOf("mo")>=0)return"mo";
+  if(f.indexOf("$")>=0)return"usd";
+  return"num";}
 
 Office.onReady(info=>{
   if(info.host!==Office.HostType.Excel){setStatus("Open this in Excel.","err");return;}
@@ -104,39 +113,55 @@ Office.onReady(info=>{
 async function loadState(){
   await Excel.run(async ctx=>{
     const sh=ctx.workbook.worksheets.getItem(SHEET);
-    const rng=sh.getRange("A6:N80").load("values");
+    const rng=sh.getRange("A6:N95").load("values, numberFormat");
     const mod=ctx.workbook.worksheets.getItem(MODEL);
-    const mrng=mod.getRange("A1:A150").load("values");
+    const mrng=mod.getRange("A1:A160").load("values");
     await ctx.sync();
-    baseY={};curY={};rateV={};drvV={};betaV={};drvDef={};betaDef={};STRUCT={head:[],markets:[]};ELASTIC_ROWS=[];
-    const v=rng.values;
+    baseY={};curY={};singleV={};curveV={};drvV={};betaV={};drvDef={};betaDef={};STRUCT={head:[],markets:[]};ELASTIC_ROWS=[];
+    const v=rng.values, F=rng.numberFormat;
     let curMarket=null,curSeg=null,mode="";
     for(let i=0;i<v.length;i++){
-      const sr=6+i; const A=(v[i][0]||"").toString(); const At=A.trim();
+      const sr=6+i; const Araw=v[i][0]; const A=(Araw==null?"":Araw).toString(); const At=A.trim();
       if(!At) continue;
       const mk=At.match(/\((KE|ZA|MZ)\)/);
       if(mk){curMarket={name:At.replace(/\s*\([A-Z]+\)\s*$/,"").trim(),code:mk[1],costs:[],segs:[]};STRUCT.markets.push(curMarket);curSeg=null;mode="market";continue;}
       if(/HEAD OFFICE/i.test(At)){mode="head";curMarket=null;curSeg=null;continue;}
       if(At==="Operating costs"){mode="costs";curSeg=null;continue;}
-      const b=numOf(v[i][1]); const c=numOf(v[i][2]); const m=v[i][12]; const beta=numOf(v[i][13]);
-      if(b===null){ // sub-header → segment
+      const Braw=v[i][1];
+      const Bempty=(Braw===""||Braw===null||Braw===undefined);
+      const Bnum=numOf(Braw);
+      const Btext=(!Bempty && Bnum===null);
+      if(Bempty){ // no Base value → divider (head) or segment header (market)
+        if(mode==="head"){STRUCT.head.push({type:"divider",label:At});continue;}
         const vert=A.indexOf("\u25c6")>=0||/vertical/i.test(A);
         const name=At.replace(/^\u25c6\s*/,"").replace(/\s*\u00b7.*$/,"").trim();
         curSeg={name,vert,drivers:[]}; if(curMarket) curMarket.segs.push(curSeg); mode="seg"; continue;
       }
       const base=[1,2,3,4,5].map(j=>Number(v[i][j]));
       const cur=[7,8,9,10,11].map(j=>Number(v[i][j]));
+      const perYear=numOf(v[i][2])!==null; // C populated → 5-year row
       if(mode==="head"){
-        if(/licence/i.test(At)){STRUCT.head.push({kind:"licence",row:sr,label:At});baseY[sr]=base;curY[sr]=cur;}
-        else {STRUCT.head.push({kind:"rate",row:sr,label:At});rateV[sr]={base:b,cur:numOf(v[i][7])};}
+        if(perYear){ // per-year $ (approved IP spend)
+          STRUCT.head.push({type:"years",kind:"usd",row:sr,label:At}); baseY[sr]=base;curY[sr]=cur;
+        } else { // single value — % / $ / × by number format
+          const k=fmtKind(F[i][1]);
+          STRUCT.head.push({type:"single",kind:k,row:sr,label:At}); singleV[sr]={base:Bnum,cur:numOf(v[i][7]),kind:k};
+        }
       } else if(mode==="costs" && curMarket){
         curMarket.costs.push({row:sr,label:At}); baseY[sr]=base;curY[sr]=cur;
-        const dv=(m||"Revenue"); drvV[sr]=dv;betaV[sr]=(beta===null?1:beta);drvDef[sr]=dv;betaDef[sr]=betaV[sr];ELASTIC_ROWS.push(sr);
+        const m=v[i][12]; const beta=numOf(v[i][13]); const dv=(m||"Revenue");
+        drvV[sr]=dv;betaV[sr]=(beta===null?1:beta);drvDef[sr]=dv;betaDef[sr]=betaV[sr];ELASTIC_ROWS.push(sr);
       } else if(mode==="seg" && curSeg){
-        curSeg.drivers.push({row:sr,label:At,fmt:DRL_FMT(At)}); baseY[sr]=base;curY[sr]=cur;
+        if(Btext){ // growth-curve dropdown (text base)
+          curSeg.drivers.push({type:"curve",row:sr,label:At}); curveV[sr]={base:Braw,cur:v[i][7]};
+        } else if(perYear){ // merchant / ARPU 5-year driver
+          curSeg.drivers.push({type:"level",row:sr,label:At,fmt:DRL_FMT(At)}); baseY[sr]=base;curY[sr]=cur;
+        } else { // single numeric in a segment → start month
+          curSeg.drivers.push({type:"month",row:sr,label:At}); singleV[sr]={base:Bnum,cur:numOf(v[i][7]),kind:"mo"};
+        }
       }
     }
-    // Model impact rows by label
+    // Model impact rows by label (consolidated block)
     const mv=mrng.values; let consAt=mv.length;
     for(let i=0;i<mv.length;i++){if((mv[i][0]||"").toString().toUpperCase().indexOf("CONSOLIDATED")>=0){consAt=i;break;}}
     const findFrom=lbl=>{for(let i=consAt;i<mv.length;i++){if((mv[i][0]||"").toString().trim()===lbl)return i+1;}return -1;};
@@ -158,7 +183,8 @@ async function withSheet(fn){
   }catch(e){setStatus("Error: "+e.message,"err");}
 }
 async function applyYears(row,vals){curY[row]=vals.slice();await withSheet((c,s)=>{s.getRange("H"+row+":L"+row).values=[vals];});}
-async function applyRate(row,val){rateV[row].cur=val;await withSheet((c,s)=>{s.getRange("H"+row).values=[[val]];});}
+async function applySingle(row,val){singleV[row].cur=val;await withSheet((c,s)=>{s.getRange("H"+row).values=[[val]];});}
+async function applyCurve(row,val){curveV[row].cur=val;await withSheet((c,s)=>{s.getRange("H"+row).values=[[val]];});}
 async function applyDriver(row,val){drvV[row]=val;await withSheet((c,s)=>{s.getRange("M"+row).values=[[val]];});}
 async function applyBeta(row,val){betaV[row]=val;await withSheet((c,s)=>{s.getRange("N"+row).values=[[val]];});}
 
@@ -178,6 +204,7 @@ async function refreshImpact(){
 }
 
 function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
+
 function levelNode(row,label,fmt,isCost){
   const wrap=el("div","drv"+(isCost?" cost":""));
   const base=baseY[row],cur=curY[row];
@@ -213,38 +240,71 @@ function levelNode(row,label,fmt,isCost){
   }
   return wrap;
 }
-function rateNode(row,label){
-  const wrap=el("div","drv");const o=rateV[row];
+
+// single value: pct (×100/%), usd ($), mult (×), mo (months)
+function singleNode(row,label,kind){
+  const wrap=el("div","drv");const o=singleV[row];
   const dn=el("div","dn");dn.appendChild(el("span","dnm",label));wrap.appendChild(dn);
-  wrap.appendChild(el("div","ref","base "+(o.base*100).toFixed(2)+"%"));
-  const rf=el("div","rowflex");const inp=el("input");inp.type="number";inp.step="any";inp.value=+(o.cur*100).toFixed(3);
-  const suf=el("span",null,"%");suf.style.color="var(--mut)";suf.style.fontSize="10px";rf.appendChild(inp);rf.appendChild(suf);wrap.appendChild(rf);
-  inp.addEventListener("change",async()=>{const nv=parseFloat(inp.value);if(isNaN(nv))return;await applyRate(row,nv/100);});
-  wrap._reset=(s)=>{inp.value=+(o.base*100).toFixed(3);return s?null:applyRate(row,o.base);};
+  const disp=x=>kind==="pct"?(x*100).toFixed(2)+"%":kind==="usd"?"$"+Math.round(x).toLocaleString():kind==="mult"?(+x).toFixed(2)+"×":Math.round(x)+" mo";
+  const ival=x=>kind==="pct"?+(x*100).toFixed(3):kind==="usd"?Math.round(x):kind==="mult"?+(+x).toFixed(2):Math.round(x);
+  wrap.appendChild(el("div","ref","base "+disp(o.base)));
+  const rf=el("div","rowflex");const inp=el("input");inp.type="number";inp.step=kind==="mo"?"1":"any";if(kind==="mo"||kind==="usd")inp.min="0";inp.value=ival(o.cur);
+  const sufTxt=kind==="pct"?"%":kind==="mult"?"×":kind==="mo"?"mo":"$";
+  const suf=el("span",null,sufTxt);suf.style.color="var(--mut)";suf.style.fontSize="10px";
+  if(kind==="usd"){rf.appendChild(suf);rf.appendChild(inp);} else {rf.appendChild(inp);rf.appendChild(suf);}
+  wrap.appendChild(rf);
+  const toStore=v=>kind==="pct"?v/100:kind==="mo"?Math.round(v):v;
+  inp.addEventListener("change",async()=>{let nv=parseFloat(inp.value);if(isNaN(nv))return;if((kind==="mo"||kind==="usd")&&nv<0)nv=0;await applySingle(row,toStore(nv));});
+  wrap._reset=(s)=>{inp.value=ival(o.base);return s?null:applySingle(row,o.base);};
   return wrap;
 }
-function licenceNode(row,label){
+
+// growth-curve dropdown (text)
+function curveNode(row,label){
+  const wrap=el("div","drv");const o=curveV[row];
+  const dn=el("div","dn");dn.appendChild(el("span","dnm",label));wrap.appendChild(dn);
+  wrap.appendChild(el("div","ref","base "+o.base));
+  const sel=document.createElement("select");CURVES.forEach(c=>{const op=document.createElement("option");op.value=c;op.textContent=c;sel.appendChild(op);});
+  if(CURVES.indexOf(o.cur)<0&&o.cur){const op=document.createElement("option");op.value=o.cur;op.textContent=o.cur;sel.appendChild(op);}
+  sel.value=o.cur;
+  sel.addEventListener("change",()=>applyCurve(row,sel.value));wrap.appendChild(sel);
+  wrap._reset=(s)=>{sel.value=o.base;return s?null:applyCurve(row,o.base);};
+  return wrap;
+}
+
+// per-year inputs (usd or pct) — no scale slider
+function yearsNode(row,label,kind){
   const wrap=el("div","drv");const dn=el("div","dn");dn.appendChild(el("span","dnm",label));wrap.appendChild(dn);
-  const base=baseY[row],cur=curY[row];
-  wrap.appendChild(el("div","ref","base "+base.map(x=>(x*100).toFixed(1)+"%").join(" · ")));
+  const base=baseY[row],cur=curY[row];const disp=x=>kind==="pct"?(x*100).toFixed(1)+"%":"$"+Math.round(x).toLocaleString();
+  wrap.appendChild(el("div","ref","base "+base.map(disp).join(" · ")));
   const grid=el("div","years");
-  const inputs=[0,1,2,3,4].map(i=>{const yc=el("div","yc");yc.appendChild(el("div","yl","Y"+(i+1)));const inp=el("input");inp.type="number";inp.step="any";inp.value=+(cur[i]*100).toFixed(2);
-    inp.addEventListener("change",async()=>{const nv=parseFloat(inp.value);if(isNaN(nv))return;const vals=curY[row].slice();vals[i]=nv/100;await applyYears(row,vals);});
+  const inputs=[0,1,2,3,4].map(i=>{const yc=el("div","yc");yc.appendChild(el("div","yl","Y"+(i+1)));const inp=el("input");inp.type="number";inp.step="any";if(kind==="usd")inp.min="0";
+    inp.value=kind==="pct"?+(cur[i]*100).toFixed(2):Math.round(cur[i]);
+    inp.addEventListener("change",async()=>{let nv=parseFloat(inp.value);if(isNaN(nv))return;const vals=curY[row].slice();vals[i]=kind==="pct"?nv/100:nv;await applyYears(row,vals);});
     yc.appendChild(inp);return inp;});
   inputs.forEach(i=>grid.appendChild(i.parentNode));wrap.appendChild(grid);
-  wrap._reset=(s)=>{inputs.forEach((inp,i)=>inp.value=+(base[i]*100).toFixed(2));return s?null:applyYears(row,base.slice());};
+  wrap._reset=(s)=>{inputs.forEach((inp,i)=>inp.value=kind==="pct"?+(base[i]*100).toFixed(2):Math.round(base[i]));return s?null:applyYears(row,base.slice());};
   return wrap;
 }
+
 function section(name,cls,buildBody,open){
   const sec=el("div","sec "+cls);const hd=el("div","hd");hd.appendChild(el("span","nm",name));const ch=el("span","ch",open?"▾":"▸");hd.appendChild(ch);sec.appendChild(hd);
   const body=el("div","body");if(!open)body.classList.add("hidden");buildBody(body);sec.appendChild(body);
   hd.addEventListener("click",()=>{body.classList.toggle("hidden");ch.textContent=body.classList.contains("hidden")?"▸":"▾";});return sec;
 }
+
 const allDrivers=[];
 function buildUI(){
   const panel=document.getElementById("panel");panel.innerHTML="";allDrivers.length=0;
   panel.appendChild(section("Head office · financial levers","ho",body=>{
-    STRUCT.head.forEach(h=>{const n=h.kind==="rate"?rateNode(h.row,h.label):licenceNode(h.row,h.label);allDrivers.push(n);body.appendChild(n);});
+    let grp=null;
+    STRUCT.head.forEach(h=>{
+      if(h.type==="divider"){grp=el("div","seg lic");grp.appendChild(el("div","sgn",h.label));body.appendChild(grp);return;}
+      let n;
+      if(h.type==="years")n=yearsNode(h.row,h.label,h.kind);
+      else n=singleNode(h.row,h.label,h.kind);
+      allDrivers.push(n);(grp||body).appendChild(n);
+    });
   },true));
   STRUCT.markets.forEach(mk=>{
     panel.appendChild(section(mk.name+"  ("+mk.code+")",mk.code.toLowerCase(),body=>{
@@ -252,12 +312,19 @@ function buildUI(){
         mk.costs.forEach(c=>{const n=levelNode(c.row,c.label,"usd",true);allDrivers.push(n);cc.appendChild(n);});body.appendChild(cc);}
       mk.segs.forEach(sg=>{
         const wrap=el("div","seg"+(sg.vert?" vert":""));wrap.appendChild(el("div","sgn",(sg.vert?"◆ ":"")+sg.name+(sg.vert?" · vertical":"")));
-        sg.drivers.forEach(d=>{const n=levelNode(d.row,d.label,d.fmt,false);allDrivers.push(n);wrap.appendChild(n);});
+        sg.drivers.forEach(d=>{
+          let n;
+          if(d.type==="curve")n=curveNode(d.row,d.label);
+          else if(d.type==="month")n=singleNode(d.row,d.label,"mo");
+          else n=levelNode(d.row,d.label,d.fmt,false);
+          allDrivers.push(n);wrap.appendChild(n);
+        });
         body.appendChild(wrap);
       });
     },false));
   });
 }
+
 document.getElementById("resetAll").addEventListener("click",async()=>{
   setStatus("Resetting to base…","work");
   allDrivers.forEach(n=>{n._reset&&n._reset(true);n._resetCorr&&n._resetCorr();});
@@ -267,7 +334,8 @@ document.getElementById("resetAll").addEventListener("click",async()=>{
       try{sh.protection.unprotect();}catch(e){}
       await ctx.sync();
       Object.keys(baseY).forEach(r=>{sh.getRange("H"+r+":L"+r).values=[baseY[r]];curY[r]=baseY[r].slice();});
-      Object.keys(rateV).forEach(r=>{sh.getRange("H"+r).values=[[rateV[r].base]];rateV[r].cur=rateV[r].base;});
+      Object.keys(singleV).forEach(r=>{sh.getRange("H"+r).values=[[singleV[r].base]];singleV[r].cur=singleV[r].base;});
+      Object.keys(curveV).forEach(r=>{sh.getRange("H"+r).values=[[curveV[r].base]];curveV[r].cur=curveV[r].base;});
       ELASTIC_ROWS.forEach(r=>{sh.getRange("M"+r).values=[[drvDef[r]]];sh.getRange("N"+r).values=[[betaDef[r]]];drvV[r]=drvDef[r];betaV[r]=betaDef[r];});
       await ctx.sync();
       try{sh.protection.protect();}catch(e){}
