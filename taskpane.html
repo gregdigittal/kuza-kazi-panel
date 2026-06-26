@@ -74,7 +74,7 @@
 <body>
 <div class="wrap">
   <div class="topbar">
-    <div><h1>Kuza Kazi · Control Panel</h1><div class="sub">Conservative base · tune levels &amp; correlations · v8</div></div>
+    <div><h1>Kuza Kazi · Control Panel</h1><div class="sub">Conservative base · tune levels &amp; correlations · v9</div></div>
     <button class="btn" id="resetAll">Reset all</button>
   </div>
   <div class="status" id="status">Connecting…</div>
@@ -87,7 +87,7 @@
 </div>
 <script>
 const SHEET="Control Panel", MODEL="Model";
-const CP_FIRST=6, CP_LAST=113;          // v7 layout: CP_END verified at row 113
+const CP_FIRST=6, CP_LAST=120;          // v8 layout: CP_END=110; 120 is a safe upper bound
 const COLB=2, COLF=6, COLH=8, COLL=12;  // 1-indexed grid columns
 
 // fmt inference: merchant counts -> num; %-rows -> pct; $ values -> arpu/usd by context
@@ -165,8 +165,15 @@ async function loadState(){
         if(b===null) continue;   // licence sub-header (no value) — skip, not a tunable row
         rateV[sr]={base:b,cur:numOf(v[i][7]),label:At};STRUCT.head.push({kind:"rate",row:sr,label:At});
       } else if(mode==="costs" && curMarket){
-        curMarket.costs.push({row:sr,label:At}); baseY[sr]=base;curY[sr]=cur;GRID_ROWS.push(sr);
-        const dv=(m||"Revenue"); drvV[sr]=dv;betaV[sr]=(beta===null?1:beta);drvDef[sr]=dv;betaDef[sr]=betaV[sr];ELASTIC_ROWS.push(sr);
+        // KE/MZ cost lines carry a driver in col M (elastic). ZA per-agent rows have no driver
+        // (FX, ratios, fixed salaries) -> treat as numeric single values (like HO levers).
+        if(m===null||m===undefined||m===""){
+          rateV[sr]={base:b,cur:numOf(v[i][7]),label:At};
+          curMarket.costs.push({row:sr,label:At,kind:"single-num"});
+        } else {
+          curMarket.costs.push({row:sr,label:At}); baseY[sr]=base;curY[sr]=cur;GRID_ROWS.push(sr);
+          const dv=m; drvV[sr]=dv;betaV[sr]=(beta===null?1:beta);drvDef[sr]=dv;betaDef[sr]=betaV[sr];ELASTIC_ROWS.push(sr);
+        }
       } else if(mode==="seg" && curSeg){
         const fmt=inferFmt(At);
         if(/start month/i.test(At)){
@@ -315,6 +322,8 @@ function levelNode(row,label,fmt,isCost){
 // ---- HO numeric single (%/$/×). Current = =Bx*ratio so manual Base edits propagate. ----
 function hoFmt(label,val){
   const l=label.toLowerCase();
+  // ZA per-agent cost rows: Rand amounts and ratios — treat as plain $ magnitudes, never pct
+  if(/fx rate|r per \$|\(r\/yr\)|\bper active merchant\b|per new merchant|merchants \/ agent|\(r\)|pay \(\$\/mo\)/.test(l)) return "usd";
   if(/multiple|\u00d7 annual|buy-out/.test(l)) return "x";
   if(/pp per|per unit spend|step-down/.test(l)) return "pct";          // pp rate, not a $ amount
   if(/ceiling \(revenue|\(\$\/yr\)|approved spend|step unit|spend \$/.test(l)) return "usd";
@@ -377,7 +386,7 @@ function buildUI(){
   STRUCT.markets.forEach(mk=>{
     panel.appendChild(section(mk.name+"  ("+mk.code+")",mk.code.toLowerCase(),body=>{
       if(mk.costs.length){const cc=el("div","seg");cc.appendChild(el("div","sgn","Operating costs"));
-        mk.costs.forEach(c=>{const n=levelNode(c.row,c.label,"usd",true);reg(n,c.row);cc.appendChild(n);});body.appendChild(cc);}
+        mk.costs.forEach(c=>{const n=(c.kind==="single-num")?rateNode(c.row,c.label):levelNode(c.row,c.label,"usd",true);reg(n,c.row);cc.appendChild(n);});body.appendChild(cc);}
       mk.segs.forEach(sg=>{
         const wrap=el("div","seg"+(sg.vert?" vert":""));wrap.appendChild(el("div","sgn",(sg.vert?"\u25c6 ":"")+sg.name+(sg.vert?" \u00b7 vertical":"")));
         sg.drivers.forEach(d=>{
