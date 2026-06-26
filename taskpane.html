@@ -37,15 +37,16 @@
   .sec .body{padding:4px 8px 8px}
   .seg{margin:6px 0 2px;padding-left:2px;border-left:2px solid var(--teal-dim)}
   .seg.vert{border-left:2px solid var(--violet)}
-  .seg.lic{border-left:2px solid var(--violet)}
   .seg .sgn{font-size:9px;letter-spacing:.6px;text-transform:uppercase;color:var(--teal);padding:3px 0 1px 6px}
-  .seg.vert .sgn,.seg.lic .sgn{color:var(--violet)}
+  .seg.vert .sgn{color:var(--violet)}
   .drv{padding:6px 4px 7px 6px;border-bottom:1px solid #243039}
   .drv:last-child{border-bottom:none}
   .drv.cost{background:#1d2935;border-radius:5px;margin:4px 0;padding:7px 6px;border:1px solid #2b3a47}
+  .drv.derived{opacity:.8}
   .drv .dn{display:flex;justify-content:space-between;align-items:baseline}
   .drv .dnm{font-size:11px;color:var(--ink)}
   .drv .fac{font-family:var(--mono);font-size:11px;color:var(--teal);min-width:42px;text-align:right}
+  .drv .lock{font-size:9px;color:var(--mut);font-family:var(--mono)}
   .ref{font-family:var(--mono);font-size:9px;color:var(--mut);margin:1px 0 3px}
   .rowflex{display:flex;align-items:center;gap:6px}
   input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:var(--line);border-radius:3px;outline:none}
@@ -64,6 +65,8 @@
   .corr .cl{font-size:9px;color:var(--violet);letter-spacing:.4px;text-transform:uppercase}
   .corr .bbox{display:flex;align-items:center;gap:5px}
   .corr .bv{font-family:var(--mono);font-size:10px;color:var(--violet);min-width:38px}
+  .single{display:flex;align-items:center;gap:6px;margin-top:3px}
+  .single input,.single select{flex:1}
   .hidden{display:none}
   .foot{font-size:9px;color:var(--mut);text-align:center;margin-top:10px}
 </style>
@@ -71,7 +74,7 @@
 <body>
 <div class="wrap">
   <div class="topbar">
-    <div><h1>Kuza Kazi · Control Panel</h1><div class="sub">Conservative base · tune levels, curves &amp; correlations · v8</div></div>
+    <div><h1>Kuza Kazi · Control Panel</h1><div class="sub">Conservative base · tune levels &amp; correlations · v8</div></div>
     <button class="btn" id="resetAll">Reset all</button>
   </div>
   <div class="status" id="status">Connecting…</div>
@@ -80,101 +83,108 @@
     <table class="kv" id="impactTbl"><tr><td colspan="6" style="text-align:center;color:var(--mut)">—</td></tr></table>
   </div>
   <div id="panel"></div>
-  <div class="foot">Self-aligns to the open workbook · writes to the Control Panel sheet · formulas stay locked</div>
+  <div class="foot">Self-aligns to the open workbook · derived rows locked · manual Base edits re-anchor proportionally</div>
 </div>
 <script>
 const SHEET="Control Panel", MODEL="Model";
-const CURVES=["Calibrated","Linear","S-curve","Front-loaded","Back-loaded"];
-const DRL_FMT=l=>/merchant/i.test(l)?"num":"arpu";
-let baseY={},curY={},singleV={},curveV={},drvV={},betaV={},drvDef={},betaDef={},derivedV={};
-let STRUCT={head:[],markets:[]}, IMPACT={rev:-1,na:-1,cum:-1}, ELASTIC_ROWS=[];
+const CP_FIRST=6, CP_LAST=113;          // v7 layout: CP_END verified at row 113
+const COLB=2, COLF=6, COLH=8, COLL=12;  // 1-indexed grid columns
+
+// fmt inference: merchant counts -> num; %-rows -> pct; $ values -> arpu/usd by context
+function inferFmt(label){
+  const l=label.toLowerCase();
+  if(/take rate|fee %|fee% |fee \(blended\)|supplier-side fee|% of |interest \(%/.test(l)) return "pct";
+  if(/merchant/.test(l) && /avg active/.test(l)) return "num";
+  if(/txns? \/|trading days|supplier orders/.test(l)) return "num";
+  if(/transaction value|order value/.test(l)) return "usd2";
+  if(/arpu/.test(l)) return "arpu";
+  return "arpu";
+}
+
+let baseY={},curY={};                 // 5-year arrays (factor + cost + licence grids)
+let baseFormula={};                   // col-B formula strings keyed by row (derived detection)
+let rateV={};                         // single numeric %/$/x rows (head office singles)
+let drvV={},betaV={},drvDef={},betaDef={};
+let singleLit={};                     // start-month integer + growth-curve text {row:{base,cur,kind}}
+let STRUCT={head:[],markets:[]}, IMPACT={rev:-1,na:-1,cum:-1}, ELASTIC_ROWS=[], GRID_ROWS=[], SINGLE_ROWS=[];
+let suppressOnChanged=false;          // guard against reacting to our own writes
 
 const fNum=v=>Math.round(v).toLocaleString();
-const fArpu=v=>"$"+(v>=10?v.toFixed(1):v.toFixed(2));
+const fArpu=v=>"$"+(Math.abs(v)>=10?v.toFixed(1):v.toFixed(3));
+const fUsd2=v=>"$"+(Math.abs(v)>=100?Math.round(v).toLocaleString():v.toFixed(2));
 const fUsd=v=>"$"+Math.round(v).toLocaleString();
-const fPct=v=>(v*100).toFixed(2)+"%";
-const fDec=v=>(+v).toFixed(2);
-const fDays=v=>Math.round(v)+"d";
+const fPct=v=>(v*100).toFixed(v*100<1?3:2)+"%";
 const fK=v=>{const a=Math.abs(v);if(a>=1e6)return (v/1e6).toFixed(2)+"M";if(a>=1e3)return (v/1e3).toFixed(0)+"k";return Math.round(v).toString();};
-function fmtVal(f,v){return f==="num"?fNum(v):f==="arpu"?fArpu(v):f==="usd"?fUsd(v):f==="pct"?fPct(v):f==="dec"?fDec(v):f==="days"?fDays(v):v;}
-// resolve a per-year grid driver's display kind from its cell number-format (v8: adds pct/dec/days)
-function levelFmt(numfmt){const f=(numfmt==null?"":numfmt).toString();
-  if(f.indexOf("%")>=0)return"pct";
-  if(f.indexOf("day")>=0)return"days";
-  if(f.indexOf("$")>=0)return f.indexOf(".00")>=0?"arpu":"usd";
-  if(f.indexOf(".00")>=0)return"dec";
-  return"num";}
+function fmtVal(f,v){return f==="num"?fNum(v):f==="pct"?fPct(v):f==="usd"?fUsd(v):f==="usd2"?fUsd2(v):fArpu(v);}
+function editVal(f,v){return f==="num"?Math.round(v):f==="pct"?+(v*100).toFixed(4):+(+v).toFixed(4);}     // value shown in a year input
+function parseEdit(f,s){const n=parseFloat(s);if(isNaN(n))return null;return f==="pct"?n/100:n;}            // input string -> stored value
 function setStatus(t,c){const e=document.getElementById("status");e.textContent=t;e.className="status "+(c||"");}
-const numOf=x=>(x===null||x===""||x===undefined||isNaN(Number(x)))?null:Number(x);
-// map a cell number-format string to a control kind
-function fmtKind(f){f=(f==null?"":f).toString();
-  if(f.indexOf("%")>=0)return"pct";
-  if(f.indexOf("\u00d7")>=0)return"mult";
-  if(f.indexOf("mo")>=0)return"mo";
-  if(f.indexOf("$")>=0)return"usd";
-  return"num";}
+const numOf=x=>(x===null||x===""||isNaN(Number(x)))?null:Number(x);
+const isF=x=>typeof x==="string"&&x.charAt(0)==="=";
+const colLetter=i=>String.fromCharCode(64+i);   // 2->B ... 12->L
 
 Office.onReady(info=>{
   if(info.host!==Office.HostType.Excel){setStatus("Open this in Excel.","err");return;}
-  loadState().then(()=>{buildUI();return refreshImpact();}).then(()=>setStatus("Ready · aligned to workbook","ok"))
+  loadState().then(()=>{buildUI();return refreshImpact();})
+             .then(()=>registerBaseWatcher())
+             .then(()=>setStatus("Ready · aligned to workbook","ok"))
              .catch(e=>setStatus("Load error: "+e.message,"err"));
 });
 
 async function loadState(){
   await Excel.run(async ctx=>{
     const sh=ctx.workbook.worksheets.getItem(SHEET);
-    const rng=sh.getRange("A6:N115").load("values, numberFormat, formulas");
+    const rng=sh.getRange("A"+CP_FIRST+":N"+CP_LAST);
+    rng.load("values, formulas");                 // formulas needed for col-B derived detection
     const mod=ctx.workbook.worksheets.getItem(MODEL);
-    const mrng=mod.getRange("A1:A180").load("values");
+    const mrng=mod.getRange("A1:A160").load("values");
     await ctx.sync();
-    baseY={};curY={};singleV={};curveV={};drvV={};betaV={};drvDef={};betaDef={};derivedV={};STRUCT={head:[],markets:[]};ELASTIC_ROWS=[];
-    const v=rng.values, F=rng.numberFormat, Fm=rng.formulas;
+    baseY={};curY={};baseFormula={};rateV={};drvV={};betaV={};drvDef={};betaDef={};singleLit={};
+    STRUCT={head:[],markets:[]};ELASTIC_ROWS=[];GRID_ROWS=[];SINGLE_ROWS=[];
+    const v=rng.values, fo=rng.formulas;
     let curMarket=null,curSeg=null,mode="";
     for(let i=0;i<v.length;i++){
-      const sr=6+i; const Araw=v[i][0]; const A=(Araw==null?"":Araw).toString(); const At=A.trim();
+      const sr=CP_FIRST+i; const A=(v[i][0]||"").toString(); const At=A.trim();
       if(!At) continue;
       const mk=At.match(/\((KE|ZA|MZ)\)/);
       if(mk){curMarket={name:At.replace(/\s*\([A-Z]+\)\s*$/,"").trim(),code:mk[1],costs:[],segs:[]};STRUCT.markets.push(curMarket);curSeg=null;mode="market";continue;}
       if(/HEAD OFFICE/i.test(At)){mode="head";curMarket=null;curSeg=null;continue;}
       if(At==="Operating costs"){mode="costs";curSeg=null;continue;}
-      const Braw=v[i][1];
-      const Bempty=(Braw===""||Braw===null||Braw===undefined);
-      const Bnum=numOf(Braw);
-      const Btext=(!Bempty && Bnum===null);
-      if(Bempty){ // no Base value → divider (head) or segment header (market)
-        if(mode==="head"){STRUCT.head.push({type:"divider",label:At});continue;}
+      const b=numOf(v[i][1]); const beta=numOf(v[i][13]); const m=v[i][12];
+      const bFormula=isF(fo[i][1]);                 // col B is a formula -> derived/read-only
+      // segment sub-header: col B blank AND not a known driver line
+      if(b===null && !bFormula && !/start month|growth curve/i.test(At)){
         const vert=A.indexOf("\u25c6")>=0||/vertical/i.test(A);
         const name=At.replace(/^\u25c6\s*/,"").replace(/\s*\u00b7.*$/,"").trim();
-        curSeg={name,vert,drivers:[]}; if(curMarket) curMarket.segs.push(curSeg); mode="seg"; continue;
+        // only treat as segment when inside a market and label is not an HO line
+        if(curMarket){curSeg={name,vert,drivers:[]};curMarket.segs.push(curSeg);mode="seg";continue;}
       }
       const base=[1,2,3,4,5].map(j=>Number(v[i][j]));
       const cur=[7,8,9,10,11].map(j=>Number(v[i][j]));
-      const perYear=numOf(v[i][2])!==null; // C populated → 5-year row
       if(mode==="head"){
-        if(perYear){ // per-year $ (approved IP spend)
-          STRUCT.head.push({type:"years",kind:"usd",row:sr,label:At}); baseY[sr]=base;curY[sr]=cur;
-        } else { // single value — % / $ / × by number format
-          const k=fmtKind(F[i][1]);
-          STRUCT.head.push({type:"single",kind:k,row:sr,label:At}); singleV[sr]={base:Bnum,cur:numOf(v[i][7]),kind:k};
-        }
+        if(b===null) continue;   // licence sub-header (no value) — skip, not a tunable row
+        rateV[sr]={base:b,cur:numOf(v[i][7]),label:At};STRUCT.head.push({kind:"rate",row:sr,label:At});
       } else if(mode==="costs" && curMarket){
-        curMarket.costs.push({row:sr,label:At}); baseY[sr]=base;curY[sr]=cur;
-        const m=v[i][12]; const beta=numOf(v[i][13]); const dv=(m||"Revenue");
-        drvV[sr]=dv;betaV[sr]=(beta===null?1:beta);drvDef[sr]=dv;betaDef[sr]=betaV[sr];ELASTIC_ROWS.push(sr);
+        curMarket.costs.push({row:sr,label:At}); baseY[sr]=base;curY[sr]=cur;GRID_ROWS.push(sr);
+        const dv=(m||"Revenue"); drvV[sr]=dv;betaV[sr]=(beta===null?1:beta);drvDef[sr]=dv;betaDef[sr]=betaV[sr];ELASTIC_ROWS.push(sr);
       } else if(mode==="seg" && curSeg){
-        const Bf=Fm[i][1]; const isFormulaB=(typeof Bf==="string" && Bf.charAt(0)==="=");
-        if(Btext){ // growth-curve dropdown (text base)
-          curSeg.drivers.push({type:"curve",row:sr,label:At}); curveV[sr]={base:Braw,cur:v[i][7]};
-        } else if(perYear && isFormulaB){ // DERIVED, locked row (e.g. Payments ARPU) → read-only display
-          curSeg.drivers.push({type:"derived",row:sr,label:At}); derivedV[sr]=cur;
-        } else if(perYear){ // merchant / factor / ARPU 5-year driver — kind from the cell format
-          curSeg.drivers.push({type:"level",row:sr,label:At,fmt:levelFmt(F[i][1])}); baseY[sr]=base;curY[sr]=cur;
-        } else { // single numeric in a segment → start month
-          curSeg.drivers.push({type:"month",row:sr,label:At}); singleV[sr]={base:Bnum,cur:numOf(v[i][7]),kind:"mo"};
+        const fmt=inferFmt(At);
+        if(/start month/i.test(At)){
+          singleLit[sr]={base:b,cur:numOf(v[i][7]),kind:"int"};
+          curSeg.drivers.push({row:sr,label:At,kind:"single-int"});SINGLE_ROWS.push(sr);
+        } else if(/growth curve/i.test(At)){
+          singleLit[sr]={base:(v[i][1]||"").toString(),cur:(v[i][7]||"").toString(),kind:"text"};
+          curSeg.drivers.push({row:sr,label:At,kind:"single-curve"});SINGLE_ROWS.push(sr);
+        } else if(bFormula){
+          baseFormula[sr]=fo[i][1];baseY[sr]=base;curY[sr]=cur;
+          curSeg.drivers.push({row:sr,label:At,fmt,kind:"derived"});
+        } else {
+          baseY[sr]=base;curY[sr]=cur;GRID_ROWS.push(sr);
+          curSeg.drivers.push({row:sr,label:At,fmt,kind:"grid"});
         }
       }
     }
-    // Model impact rows by label (consolidated block)
+    // Model impact rows by label
     const mv=mrng.values; let consAt=mv.length;
     for(let i=0;i<mv.length;i++){if((mv[i][0]||"").toString().toUpperCase().indexOf("CONSOLIDATED")>=0){consAt=i;break;}}
     const findFrom=lbl=>{for(let i=consAt;i<mv.length;i++){if((mv[i][0]||"").toString().trim()===lbl)return i+1;}return -1;};
@@ -182,8 +192,32 @@ async function loadState(){
   });
 }
 
+// ---- write helpers: proportional re-anchor. Current cells are FORMULAS =Bx*ratio, never literals. ----
+function curColForBase(bcol){return bcol+6;}      // B(2)->H(8), F(6)->L(12)
+async function applyGridFormulas(row,ratios){     // ratios: 5 numbers (per year col)
+  await withSheet((c,s)=>{
+    const cells=[0,1,2,3,4].map(k=>{
+      const bcol=colLetter(COLB+k), r=ratios[k];
+      return (Math.abs(r-1)<1e-12)? "="+bcol+row : "="+bcol+row+"*"+r;
+    });
+    s.getRange("H"+row+":L"+row).formulas=[cells];
+  });
+}
+async function applySingleFormula(row,ratio){     // numeric HO single -> =Bx*ratio in H
+  await withSheet((c,s)=>{
+    const f=(Math.abs(ratio-1)<1e-12)?"=B"+row:"=B"+row+"*"+ratio;
+    s.getRange("H"+row).formulas=[[f]];
+  });
+}
+async function applyLiteralSingle(row,val){       // start-month int / growth-curve text -> literal H
+  await withSheet((c,s)=>{s.getRange("H"+row).values=[[val]];});
+}
+async function applyDriver(row,val){drvV[row]=val;await withSheet((c,s)=>{s.getRange("M"+row).values=[[val]];});}
+async function applyBeta(row,val){betaV[row]=val;await withSheet((c,s)=>{s.getRange("N"+row).values=[[val]];});}
+
 async function withSheet(fn){
   setStatus("Updating…","work");
+  suppressOnChanged=true;
   try{
     await Excel.run(async ctx=>{
       const sh=ctx.workbook.worksheets.getItem(SHEET);
@@ -194,12 +228,8 @@ async function withSheet(fn){
     });
     await refreshImpact(); setStatus("Updated","ok");
   }catch(e){setStatus("Error: "+e.message,"err");}
+  finally{setTimeout(()=>{suppressOnChanged=false;},300);}
 }
-async function applyYears(row,vals){curY[row]=vals.slice();await withSheet((c,s)=>{s.getRange("H"+row+":L"+row).values=[vals];});}
-async function applySingle(row,val){singleV[row].cur=val;await withSheet((c,s)=>{s.getRange("H"+row).values=[[val]];});}
-async function applyCurve(row,val){curveV[row].cur=val;await withSheet((c,s)=>{s.getRange("H"+row).values=[[val]];});}
-async function applyDriver(row,val){drvV[row]=val;await withSheet((c,s)=>{s.getRange("M"+row).values=[[val]];});}
-async function applyBeta(row,val){betaV[row]=val;await withSheet((c,s)=>{s.getRange("N"+row).values=[[val]];});}
 
 async function refreshImpact(){
   if(IMPACT.rev<0){document.getElementById("impactTbl").innerHTML='<tr><td style="color:var(--warn)">Model rows not found — is the Model sheet present?</td></tr>';return;}
@@ -218,33 +248,58 @@ async function refreshImpact(){
 
 function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
 
+// ---- READ-ONLY derived row (Base col B is a formula) ----
+function derivedNode(row,label,fmt){
+  const wrap=el("div","drv derived");
+  const base=baseY[row]||[0,0,0,0,0], cur=curY[row]||base;
+  const dn=el("div","dn");dn.appendChild(el("span","dnm",label));dn.appendChild(el("span","lock","derived · locked"));wrap.appendChild(dn);
+  wrap.appendChild(el("div","ref","computed "+fmtVal(fmt,base[0])+" → "+fmtVal(fmt,base[4])));
+  const cd=el("div","cur");[0,1,2,3,4].forEach(i=>{const c=el("span");c.appendChild(el("span",null,fmtVal(fmt,cur[i])));cd.appendChild(c);});wrap.appendChild(cd);
+  wrap._reset=()=>null;            // nothing to reset — formula tracks its factors
+  wrap._refreshCosmetic=(nbase,ncur)=>{
+    if(nbase)baseY[row]=nbase;if(ncur)curY[row]=ncur;
+    const b=baseY[row],c=curY[row];
+    wrap.querySelector(".ref").textContent="computed "+fmtVal(fmt,b[0])+" → "+fmtVal(fmt,b[4]);
+    const spans=wrap.querySelectorAll(".cur span span");[0,1,2,3,4].forEach(i=>spans[i].textContent=fmtVal(fmt,c[i]));
+  };
+  return wrap;
+}
+
+// ---- TUNABLE 5-year grid (factor / cost). Writes =Bx*ratio formulas. ----
 function levelNode(row,label,fmt,isCost){
   const wrap=el("div","drv"+(isCost?" cost":""));
   const base=baseY[row],cur=curY[row];
-  // edit-year input (de)serialization: pct shows ×100 and stores the fraction
-  const toInput=x=>fmt==="pct"?+(x*100).toFixed(3):(fmt==="num"||fmt==="days"||fmt==="usd")?Math.round(x):+(+x).toFixed(4);
-  const fromInput=x=>fmt==="pct"?x/100:x;
-  const dn=el("div","dn");dn.appendChild(el("span","dnm",label));const fac=el("span","fac","×1.00");dn.appendChild(fac);wrap.appendChild(dn);
-  wrap.appendChild(el("div","ref","base "+fmtVal(fmt,base[0])+" → "+fmtVal(fmt,base[4])));
+  wrap._ratios=[1,1,1,1,1];   // per-year ratio store; Current = Base*ratio as a live formula
+  const dn=el("div","dn");dn.appendChild(el("span","dnm",label));const fac=el("span","fac","\u00d71.00");dn.appendChild(fac);wrap.appendChild(dn);
+  const ref=el("div","ref","base "+fmtVal(fmt,base[0])+" \u2192 "+fmtVal(fmt,base[4]));wrap.appendChild(ref);
   const rf=el("div","rowflex");const sl=el("input");sl.type="range";sl.min="0.25";sl.max="3";sl.step="0.05";sl.value="1";rf.appendChild(sl);wrap.appendChild(rf);
   const cd=el("div","cur");const spans=[0,1,2,3,4].map(i=>el("span",null,fmtVal(fmt,cur[i])));spans.forEach(s=>{const c=el("span");c.appendChild(s);cd.appendChild(c);});wrap.appendChild(cd);
-  const tog=el("button","lnk","edit years ▾");wrap.appendChild(tog);
+  const tog=el("button","lnk","edit years \u25be");wrap.appendChild(tog);
   const grid=el("div","years hidden");
-  const inputs=[0,1,2,3,4].map(i=>{const yc=el("div","yc");yc.appendChild(el("div","yl","Y"+(i+1)));const inp=el("input");inp.type="number";inp.step="any";inp.value=toInput(cur[i]);
-    inp.addEventListener("change",async()=>{const nv=parseFloat(inp.value);if(isNaN(nv))return;const mv=fromInput(nv);const vals=curY[row].slice();vals[i]=mv;await applyYears(row,vals);spans[i].textContent=fmtVal(fmt,mv);fac.textContent="×—";});
+  const inputs=[0,1,2,3,4].map(i=>{const yc=el("div","yc");yc.appendChild(el("div","yl","Y"+(i+1)));const inp=el("input");inp.type="number";inp.step="any";inp.value=editVal(fmt,cur[i]);
+    inp.addEventListener("change",async()=>{
+      const nv=parseEdit(fmt,inp.value);if(nv===null)return;
+      const b=baseY[row][i]; wrap._ratios[i]=(b===0?0:+(nv/b).toFixed(8));
+      await applyGridFormulas(row,wrap._ratios);
+      curY[row][i]=nv; spans[i].textContent=fmtVal(fmt,nv); fac.textContent="\u00d7\u2014";
+    });
     yc.appendChild(inp);return inp;});
   inputs.forEach(i=>grid.appendChild(i.parentNode));wrap.appendChild(grid);
-  tog.addEventListener("click",()=>{grid.classList.toggle("hidden");tog.textContent=grid.classList.contains("hidden")?"edit years ▾":"hide years ▴";});
-  const apply=async()=>{const f=parseFloat(sl.value);fac.textContent="×"+f.toFixed(2);const vals=base.map(b=>b*f);await applyYears(row,vals);vals.forEach((x,i)=>{spans[i].textContent=fmtVal(fmt,x);inputs[i].value=toInput(x);});};
-  sl.addEventListener("input",()=>{fac.textContent="×"+parseFloat(sl.value).toFixed(2);});
-  sl.addEventListener("change",apply);
-  wrap._reset=(s)=>{sl.value="1";fac.textContent="×1.00";const vals=base.slice();vals.forEach((x,i)=>{spans[i].textContent=fmtVal(fmt,x);inputs[i].value=toInput(x);});return s?null:applyYears(row,vals);};
+  tog.addEventListener("click",()=>{grid.classList.toggle("hidden");tog.textContent=grid.classList.contains("hidden")?"edit years \u25be":"hide years \u25b4";});
+  function showAll(){const b=baseY[row];const vals=b.map((x,i)=>x*wrap._ratios[i]);curY[row]=vals.slice();
+    vals.forEach((x,i)=>{spans[i].textContent=fmtVal(fmt,x);inputs[i].value=editVal(fmt,x);});}
+  sl.addEventListener("input",()=>{fac.textContent="\u00d7"+parseFloat(sl.value).toFixed(2);});
+  sl.addEventListener("change",async()=>{const f=+(parseFloat(sl.value)).toFixed(4);fac.textContent="\u00d7"+f.toFixed(2);
+    wrap._ratios=[f,f,f,f,f];await applyGridFormulas(row,wrap._ratios);showAll();});
+  wrap._reset=(s)=>{sl.value="1";fac.textContent="\u00d71.00";wrap._ratios=[1,1,1,1,1];showAll();
+    return s?null:applyGridFormulas(row,[1,1,1,1,1]);};
+  wrap._refreshCosmetic=()=>{const b=baseY[row];ref.textContent="base "+fmtVal(fmt,b[0])+" \u2192 "+fmtVal(fmt,b[4]);showAll();};
   if(isCost){
     const corr=el("div","corr");
     const left=el("div");left.appendChild(el("div","cl","Driver"));
     const dsel=document.createElement("select");["Revenue","Merchants"].forEach(o=>{const op=document.createElement("option");op.value=o;op.textContent=o;dsel.appendChild(op);});dsel.value=drvV[row];
     dsel.addEventListener("change",()=>applyDriver(row,dsel.value));left.appendChild(dsel);
-    const right=el("div");right.appendChild(el("div","cl","Elasticity β"));
+    const right=el("div");right.appendChild(el("div","cl","Elasticity \u03b2"));
     const bb=el("div","bbox");const bsl=el("input","b");bsl.type="range";bsl.min="0";bsl.max="1.5";bsl.step="0.05";bsl.value=betaV[row];
     const bv=el("span","bv",(+betaV[row]).toFixed(2));bb.appendChild(bsl);bb.appendChild(bv);right.appendChild(bb);
     bsl.addEventListener("input",()=>bv.textContent=parseFloat(bsl.value).toFixed(2));
@@ -257,94 +312,81 @@ function levelNode(row,label,fmt,isCost){
   return wrap;
 }
 
-// single value: pct (×100/%), usd ($), mult (×), mo (months)
+// ---- HO numeric single (%/$/×). Current = =Bx*ratio so manual Base edits propagate. ----
+function hoFmt(label,val){
+  const l=label.toLowerCase();
+  if(/multiple|\u00d7 annual|buy-out/.test(l)) return "x";
+  if(/pp per|per unit spend|step-down/.test(l)) return "pct";          // pp rate, not a $ amount
+  if(/ceiling \(revenue|\(\$\/yr\)|approved spend|step unit|spend \$/.test(l)) return "usd";
+  if(typeof val==="number" && Math.abs(val)>=100) return "usd";
+  return "pct";
+}
+function rateNode(row,label){
+  const wrap=el("div","drv");const o=rateV[row];const fmt=hoFmt(label,o.base);
+  const dn=el("div","dn");dn.appendChild(el("span","dnm",label));wrap.appendChild(dn);
+  const showBase=v=>fmt==="pct"?(v*100).toFixed(3)+"%":fmt==="usd"?"$"+Math.round(v).toLocaleString():(+v).toFixed(2)+"×";
+  const ref=el("div","ref","base "+showBase(o.base));wrap.appendChild(ref);
+  const rf=el("div","rowflex");const inp=el("input");inp.type="number";inp.step="any";
+  inp.value=fmt==="pct"?+(o.cur*100).toFixed(4):+(+o.cur).toFixed(4);
+  const suf=el("span",null,fmt==="pct"?"%":fmt==="usd"?"$":"×");suf.style.color="var(--mut)";suf.style.fontSize="10px";rf.appendChild(inp);rf.appendChild(suf);wrap.appendChild(rf);
+  inp.addEventListener("change",async()=>{const raw=parseFloat(inp.value);if(isNaN(raw))return;
+    const nv=fmt==="pct"?raw/100:raw; const b=o.base; const ratio=(b===0? (nv===0?1:0) : +(nv/b).toFixed(8));
+    o.cur=nv; wrap._ratio=ratio; await applySingleFormula(row,ratio);});
+  wrap._ratio=1;
+  wrap._reset=(s)=>{inp.value=fmt==="pct"?+(o.base*100).toFixed(4):+(+o.base).toFixed(4);o.cur=o.base;wrap._ratio=1;return s?null:applySingleFormula(row,1);};
+  wrap._refreshCosmetic=()=>{ref.textContent="base "+showBase(o.base);
+    const nv=o.base*wrap._ratio;o.cur=nv;inp.value=fmt==="pct"?+(nv*100).toFixed(4):+(+nv).toFixed(4);};
+  return wrap;
+}
+
+// ---- start-month integer / growth-curve text: literal hold (no proportional re-anchor) ----
+const CURVES=["Calibrated","Linear","S-curve","Front-loaded","Back-loaded"];
 function singleNode(row,label,kind){
-  const wrap=el("div","drv");const o=singleV[row];
+  const wrap=el("div","drv");const o=singleLit[row];
   const dn=el("div","dn");dn.appendChild(el("span","dnm",label));wrap.appendChild(dn);
-  const disp=x=>kind==="pct"?(x*100).toFixed(2)+"%":kind==="usd"?"$"+Math.round(x).toLocaleString():kind==="mult"?(+x).toFixed(2)+"×":Math.round(x)+" mo";
-  const ival=x=>kind==="pct"?+(x*100).toFixed(3):kind==="usd"?Math.round(x):kind==="mult"?+(+x).toFixed(2):Math.round(x);
-  wrap.appendChild(el("div","ref","base "+disp(o.base)));
-  const rf=el("div","rowflex");const inp=el("input");inp.type="number";inp.step=kind==="mo"?"1":"any";if(kind==="mo"||kind==="usd")inp.min="0";inp.value=ival(o.cur);
-  const sufTxt=kind==="pct"?"%":kind==="mult"?"×":kind==="mo"?"mo":"$";
-  const suf=el("span",null,sufTxt);suf.style.color="var(--mut)";suf.style.fontSize="10px";
-  if(kind==="usd"){rf.appendChild(suf);rf.appendChild(inp);} else {rf.appendChild(inp);rf.appendChild(suf);}
-  wrap.appendChild(rf);
-  const toStore=v=>kind==="pct"?v/100:kind==="mo"?Math.round(v):v;
-  inp.addEventListener("change",async()=>{let nv=parseFloat(inp.value);if(isNaN(nv))return;if((kind==="mo"||kind==="usd")&&nv<0)nv=0;await applySingle(row,toStore(nv));});
-  wrap._reset=(s)=>{inp.value=ival(o.base);return s?null:applySingle(row,o.base);};
-  return wrap;
-}
-
-// derived / locked row (Base is a formula) — read-only display, no inputs
-function derivedNode(row,label){
-  const wrap=el("div","drv");
-  const dn=el("div","dn");dn.appendChild(el("span","dnm",label));const tag=el("span","fac","derived");tag.style.color="var(--mut)";dn.appendChild(tag);wrap.appendChild(dn);
-  const vals=derivedV[row]||[];
-  wrap.appendChild(el("div","ref","🔒 locked · "+vals.map(fArpu).join(" · ")));
-  wrap._reset=()=>null; // nothing to reset; recomputes from its factors
-  return wrap;
-}
-
-// growth-curve dropdown (text)
-function curveNode(row,label){
-  const wrap=el("div","drv");const o=curveV[row];
-  const dn=el("div","dn");dn.appendChild(el("span","dnm",label));wrap.appendChild(dn);
-  wrap.appendChild(el("div","ref","base "+o.base));
-  const sel=document.createElement("select");CURVES.forEach(c=>{const op=document.createElement("option");op.value=c;op.textContent=c;sel.appendChild(op);});
-  if(CURVES.indexOf(o.cur)<0&&o.cur){const op=document.createElement("option");op.value=o.cur;op.textContent=o.cur;sel.appendChild(op);}
-  sel.value=o.cur;
-  sel.addEventListener("change",()=>applyCurve(row,sel.value));wrap.appendChild(sel);
-  wrap._reset=(s)=>{sel.value=o.base;return s?null:applyCurve(row,o.base);};
-  return wrap;
-}
-
-// per-year inputs (usd or pct) — no scale slider
-function yearsNode(row,label,kind){
-  const wrap=el("div","drv");const dn=el("div","dn");dn.appendChild(el("span","dnm",label));wrap.appendChild(dn);
-  const base=baseY[row],cur=curY[row];const disp=x=>kind==="pct"?(x*100).toFixed(1)+"%":"$"+Math.round(x).toLocaleString();
-  wrap.appendChild(el("div","ref","base "+base.map(disp).join(" · ")));
-  const grid=el("div","years");
-  const inputs=[0,1,2,3,4].map(i=>{const yc=el("div","yc");yc.appendChild(el("div","yl","Y"+(i+1)));const inp=el("input");inp.type="number";inp.step="any";if(kind==="usd")inp.min="0";
-    inp.value=kind==="pct"?+(cur[i]*100).toFixed(2):Math.round(cur[i]);
-    inp.addEventListener("change",async()=>{let nv=parseFloat(inp.value);if(isNaN(nv))return;const vals=curY[row].slice();vals[i]=kind==="pct"?nv/100:nv;await applyYears(row,vals);});
-    yc.appendChild(inp);return inp;});
-  inputs.forEach(i=>grid.appendChild(i.parentNode));wrap.appendChild(grid);
-  wrap._reset=(s)=>{inputs.forEach((inp,i)=>inp.value=kind==="pct"?+(base[i]*100).toFixed(2):Math.round(base[i]));return s?null:applyYears(row,base.slice());};
-  return wrap;
+  const sub=el("div","single");
+  if(kind==="single-int"){
+    wrap.appendChild(el("div","ref","base "+o.base));
+    const inp=el("input");inp.type="number";inp.step="1";inp.min="0";inp.value=o.cur;
+    inp.addEventListener("change",async()=>{const nv=parseInt(inp.value,10);if(isNaN(nv))return;o.cur=nv;await applyLiteralSingle(row,nv);});
+    sub.appendChild(inp);wrap._reset=(s)=>{inp.value=o.base;o.cur=o.base;return s?null:applyLiteralSingle(row,o.base);};
+    wrap._refreshCosmetic=()=>{wrap.querySelector(".ref").textContent="base "+o.base;inp.value=o.cur;};
+  } else {
+    wrap.appendChild(el("div","ref","base "+o.base));
+    const sel=document.createElement("select");CURVES.forEach(c=>{const op=document.createElement("option");op.value=c;op.textContent=c;sel.appendChild(op);});
+    if(CURVES.indexOf(o.cur)<0 && o.cur)CURVES.push(o.cur); sel.value=o.cur;
+    sel.addEventListener("change",async()=>{o.cur=sel.value;await applyLiteralSingle(row,sel.value);});
+    sub.appendChild(sel);wrap._reset=(s)=>{sel.value=o.base;o.cur=o.base;return s?null:applyLiteralSingle(row,o.base);};
+    wrap._refreshCosmetic=()=>{wrap.querySelector(".ref").textContent="base "+o.base;sel.value=o.cur;};
+  }
+  wrap.appendChild(sub);return wrap;
 }
 
 function section(name,cls,buildBody,open){
-  const sec=el("div","sec "+cls);const hd=el("div","hd");hd.appendChild(el("span","nm",name));const ch=el("span","ch",open?"▾":"▸");hd.appendChild(ch);sec.appendChild(hd);
+  const sec=el("div","sec "+cls);const hd=el("div","hd");hd.appendChild(el("span","nm",name));const ch=el("span","ch",open?"\u25be":"\u25b8");hd.appendChild(ch);sec.appendChild(hd);
   const body=el("div","body");if(!open)body.classList.add("hidden");buildBody(body);sec.appendChild(body);
-  hd.addEventListener("click",()=>{body.classList.toggle("hidden");ch.textContent=body.classList.contains("hidden")?"▸":"▾";});return sec;
+  hd.addEventListener("click",()=>{body.classList.toggle("hidden");ch.textContent=body.classList.contains("hidden")?"\u25b8":"\u25be";});return sec;
 }
-
-const allDrivers=[];
+const allDrivers=[];const nodeByRow={};
+function reg(n,row){allDrivers.push(n);if(row!=null)nodeByRow[row]=n;return n;}
 function buildUI(){
-  const panel=document.getElementById("panel");panel.innerHTML="";allDrivers.length=0;
+  const panel=document.getElementById("panel");panel.innerHTML="";allDrivers.length=0;Object.keys(nodeByRow).forEach(k=>delete nodeByRow[k]);
   panel.appendChild(section("Head office · financial levers","ho",body=>{
-    let grp=null;
-    STRUCT.head.forEach(h=>{
-      if(h.type==="divider"){grp=el("div","seg lic");grp.appendChild(el("div","sgn",h.label));body.appendChild(grp);return;}
-      let n;
-      if(h.type==="years")n=yearsNode(h.row,h.label,h.kind);
-      else n=singleNode(h.row,h.label,h.kind);
-      allDrivers.push(n);(grp||body).appendChild(n);
-    });
+    STRUCT.head.forEach(h=>{const n=rateNode(h.row,h.label);reg(n,h.row);body.appendChild(n);});
   },true));
   STRUCT.markets.forEach(mk=>{
     panel.appendChild(section(mk.name+"  ("+mk.code+")",mk.code.toLowerCase(),body=>{
       if(mk.costs.length){const cc=el("div","seg");cc.appendChild(el("div","sgn","Operating costs"));
-        mk.costs.forEach(c=>{const n=levelNode(c.row,c.label,"usd",true);allDrivers.push(n);cc.appendChild(n);});body.appendChild(cc);}
+        mk.costs.forEach(c=>{const n=levelNode(c.row,c.label,"usd",true);reg(n,c.row);cc.appendChild(n);});body.appendChild(cc);}
       mk.segs.forEach(sg=>{
-        const wrap=el("div","seg"+(sg.vert?" vert":""));wrap.appendChild(el("div","sgn",(sg.vert?"◆ ":"")+sg.name+(sg.vert?" · vertical":"")));
+        const wrap=el("div","seg"+(sg.vert?" vert":""));wrap.appendChild(el("div","sgn",(sg.vert?"\u25c6 ":"")+sg.name+(sg.vert?" \u00b7 vertical":"")));
         sg.drivers.forEach(d=>{
           let n;
-          if(d.type==="curve")n=curveNode(d.row,d.label);
-          else if(d.type==="month")n=singleNode(d.row,d.label,"mo");
-          else if(d.type==="derived")n=derivedNode(d.row,d.label);
+          if(d.kind==="derived") n=derivedNode(d.row,d.label,d.fmt);
+          else if(d.kind==="single-int") n=singleNode(d.row,d.label,"single-int");
+          else if(d.kind==="single-curve") n=singleNode(d.row,d.label,"single-curve");
           else n=levelNode(d.row,d.label,d.fmt,false);
-          allDrivers.push(n);wrap.appendChild(n);
+          reg(n,d.row);wrap.appendChild(n);
         });
         body.appendChild(wrap);
       });
@@ -352,17 +394,61 @@ function buildUI(){
   });
 }
 
+// ---- watch manual Base (Conservative) edits → refresh cosmetic state only ----
+async function registerBaseWatcher(){
+  await Excel.run(async ctx=>{
+    const sh=ctx.workbook.worksheets.getItem(SHEET);
+    sh.onChanged.add(handleBaseChanged);
+    await ctx.sync();
+  });
+}
+let reloadTimer=null;
+function handleBaseChanged(ev){
+  if(suppressOnChanged)return;                      // ignore our own writes
+  const addr=(ev.address||"").toUpperCase();
+  // only react to edits touching Base columns A–F of the Control Panel
+  if(!/^[A-F]/.test(addr) && !/!?[A-F]\d/.test(addr) && !/\b[A-F]\d/.test(addr)){
+    // be permissive: if address spans many cols it may include B–F; fall through unless clearly H–N only
+  }
+  if(reloadTimer)clearTimeout(reloadTimer);
+  reloadTimer=setTimeout(refreshCosmeticFromBase,250);
+}
+async function refreshCosmeticFromBase(){
+  try{
+    await Excel.run(async ctx=>{
+      const sh=ctx.workbook.worksheets.getItem(SHEET);
+      const rng=sh.getRange("A"+CP_FIRST+":N"+CP_LAST);rng.load("values, formulas");await ctx.sync();
+      const v=rng.values, fo=rng.formulas;
+      // re-read Base arrays / singles for known rows
+      GRID_ROWS.forEach(r=>{const i=r-CP_FIRST;baseY[r]=[1,2,3,4,5].map(j=>Number(v[i][j]));});
+      Object.keys(baseFormula).forEach(rk=>{const r=+rk,i=r-CP_FIRST;
+        baseY[r]=[1,2,3,4,5].map(j=>Number(v[i][j]));curY[r]=[7,8,9,10,11].map(j=>Number(v[i][j]));});
+      Object.keys(rateV).forEach(rk=>{const r=+rk,i=r-CP_FIRST;rateV[r].base=numOf(v[i][1]);});
+      SINGLE_ROWS.forEach(r=>{const i=r-CP_FIRST;const o=singleLit[r];
+        o.base=(o.kind==="int")?numOf(v[i][1]):(v[i][1]||"").toString();});
+      // refresh each node's displayed base/current cosmetically
+      allDrivers.forEach(n=>{n._refreshCosmetic&&n._refreshCosmetic();});
+      setStatus("Base re-read · displays re-anchored","ok");
+    });
+  }catch(e){/* non-fatal cosmetic refresh */ }
+}
+
 document.getElementById("resetAll").addEventListener("click",async()=>{
   setStatus("Resetting to base…","work");
   allDrivers.forEach(n=>{n._reset&&n._reset(true);n._resetCorr&&n._resetCorr();});
+  suppressOnChanged=true;
   try{
     await Excel.run(async ctx=>{
       const sh=ctx.workbook.worksheets.getItem(SHEET);
       try{sh.protection.unprotect();}catch(e){}
       await ctx.sync();
-      Object.keys(baseY).forEach(r=>{sh.getRange("H"+r+":L"+r).values=[baseY[r]];curY[r]=baseY[r].slice();});
-      Object.keys(singleV).forEach(r=>{sh.getRange("H"+r).values=[[singleV[r].base]];singleV[r].cur=singleV[r].base;});
-      Object.keys(curveV).forEach(r=>{sh.getRange("H"+r).values=[[curveV[r].base]];curveV[r].cur=curveV[r].base;});
+      // grids + costs: Current = =Bx (ratio 1) across H:L
+      GRID_ROWS.forEach(r=>{const cells=[0,1,2,3,4].map(k=>"="+colLetter(COLB+k)+r);sh.getRange("H"+r+":L"+r).formulas=[cells];curY[r]=baseY[r].slice();});
+      // HO singles: Current = =Bx
+      Object.keys(rateV).forEach(rk=>{const r=+rk;sh.getRange("H"+r).formulas=[["=B"+r]];rateV[r].cur=rateV[r].base;});
+      // start-month / growth-curve literals back to Base
+      SINGLE_ROWS.forEach(r=>{const o=singleLit[r];sh.getRange("H"+r).values=[[o.base]];o.cur=o.base;});
+      // cost driver/β defaults
       ELASTIC_ROWS.forEach(r=>{sh.getRange("M"+r).values=[[drvDef[r]]];sh.getRange("N"+r).values=[[betaDef[r]]];drvV[r]=drvDef[r];betaV[r]=betaDef[r];});
       await ctx.sync();
       try{sh.protection.protect();}catch(e){}
@@ -370,6 +456,7 @@ document.getElementById("resetAll").addEventListener("click",async()=>{
     });
     await refreshImpact();setStatus("Reset to Conservative base","ok");
   }catch(e){setStatus("Error: "+e.message,"err");}
+  finally{setTimeout(()=>{suppressOnChanged=false;},300);}
 });
 </script>
 </body>
